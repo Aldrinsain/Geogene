@@ -177,3 +177,13 @@ function showResult(isVerified, failMessage, extracted) {
   }
   showScreen(screenResult);
 }
+
+// ---------- RESTART (from result screen) ----------
+restartBtn.addEventListener('click', () => {
+  idPreview.style.display = 'none';
+  idPreview.src = '';
+  confirmRow.style.display = 'none';
+  captureRow.style.display = 'flex';
+  showScreen(screenScan);
+  startCamera();
+});
