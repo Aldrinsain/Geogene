@@ -28,3 +28,21 @@ function token_found_in_text(string $token, string $ocrText): bool
     if ($token === '') return true; // nothing required, trivially "found"
 
     if (str_contains($ocrText, $token)) return true;
+
+// Fuzzy fallback: slide a window of OCR words the same length as the
+    // token and see if any window is a close-enough match (handles
+    // misreads without being so loose it matches unrelated names).
+    $tokenWords = explode(' ', $token);
+    $ocrWords = explode(' ', $ocrText);
+    $winLen = count($tokenWords);
+
+    for ($i = 0; $i <= count($ocrWords) - $winLen; $i++) {
+        $window = implode(' ', array_slice($ocrWords, $i, $winLen));
+        $maxLen = max(strlen($token), strlen($window));
+        if ($maxLen === 0) continue;
+        similar_text($token, $window, $pct);
+        if ($pct >= 80.0) return true;
+    }
+
+    return false;
+}
