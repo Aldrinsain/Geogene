@@ -8,7 +8,7 @@ if ($fullName === '') {
     echo json_encode(['found' => false]);
     exit;
 }
-// Split "Juan Dela Cruz" into parts for a loose match against the registry
+// Split "examplename" into parts for a loose match against the registry
 $parts = preg_split('/\s+/', $fullName);
 $searchTerm = '%' . implode('%', $parts) . '%';
 
@@ -20,3 +20,13 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$searchTerm]);
 $record = $stmt->fetch();
+// I-remember ang na-search nga ngalan (para naa pa gihapon kung mo-balik ang user)
+$_SESSION['search_full_name'] = $fullName;
+
+if ($record) {
+    $_SESSION['matched_record_id'] = $record['record_id'];
+    echo json_encode(['found' => true, 'record' => $record]);
+} else {
+    unset($_SESSION['matched_record_id']);
+    echo json_encode(['found' => false]);
+}
