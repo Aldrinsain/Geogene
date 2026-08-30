@@ -126,3 +126,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <a href="../dashboard/dashboard.php" class="btn-primary" style="text-decoration:none;">Continue to Dashboard</a>
   <?php endif; ?>
 </div>
+<script>
+// Auto-advance sa sunod nga OTP box, ug auto-submit sa human ma-fill tanan
+const boxes = document.querySelectorAll('.otp-box');
+boxes.forEach((box, i) => {
+  box.addEventListener('input', () => {
+    box.value = box.value.replace(/[^0-9]/g, '');
+    if (box.value && i < boxes.length - 1) {
+      boxes[i + 1].focus();
+    }
+    const allFilled = [...boxes].every(b => b.value.length === 1);
+    if (allFilled) {
+      document.getElementById('otpForm').submit();
+    }
+  });
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace' && !box.value && i > 0) {
+      boxes[i - 1].focus();
+    }
+  });
+});
+if (boxes.length) boxes[0].focus();
+</script>
+</body>
+</html>
