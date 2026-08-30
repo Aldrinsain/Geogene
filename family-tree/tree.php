@@ -135,3 +135,95 @@ function nodeHtml($p, $gen, $rel, $isSelf = false) {
   .filter-modal-actions{display:flex;gap:10px;margin-top:18px;}
   .filter-modal-actions button{flex:1;margin-top:0;}
 </style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="content-scroll">
+    <div class="app-header"><span>Family Tree</span><span class="filter-icon" onclick="openFilterModal()">⚙</span></div>
+
+    <div class="search-bar">
+      <span class="s-icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16" style="display:inline-block;vertical-align:middle;"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg></span>
+      <input type="text" id="filterInput" class="form-input" placeholder="Search name...">
+    </div>
+
+    <?php if (!$self || (!$parents && !$children && !$spouses && !$siblings)): ?>
+      <div class="empty-state">
+        <div class="e-icon"></div>
+        <p>No family members found.</p>
+      </div>
+    <?php else: ?>
+
+      <div id="treeWrap" style="overflow-x:auto;">
+        <div class="tree-diagram">
+
+          <?php if ($grandparents): ?>
+            <div class="tree-tier pair">
+              <?php foreach (array_slice($grandparents, 0, 2) as $g) nodeHtml($g, 3, 'grandparents'); ?>
+            </div>
+            <div class="connector-v" style="height:16px;"></div>
+          <?php endif; ?>
+
+          <?php if ($parents): ?>
+            <div class="tree-tier pair">
+              <?php foreach (array_slice($parents, 0, 2) as $p) nodeHtml($p, 2, 'parents'); ?>
+            </div>
+            <div class="connector-v" style="height:16px;"></div>
+          <?php endif; ?>
+
+          <div class="tree-tier" style="gap:22px;">
+            <?php foreach ($siblings as $s) nodeHtml($s, 1, 'siblings'); ?>
+            <?php nodeHtml($self, 1, 'self', true); ?>
+            <?php foreach ($spouses as $sp) nodeHtml($sp, 1, 'spouse'); ?>
+          </div>
+
+          <?php if ($children): ?>
+            <div class="connector-v" style="height:16px;"></div>
+            <div class="tree-tier" style="gap:22px;">
+              <?php foreach ($children as $c) nodeHtml($c, 0, 'children'); ?>
+            </div>
+          <?php endif; ?>
+
+        </div>
+      </div>
+
+    <?php endif; ?>
+
+    
+  </div>
+
+  <div class="zoom-bar" >
+    <button onclick="zoom(-10)">−</button>
+    <span id="zoomLabel">100%</span>
+    <button onclick="zoom(10)">+</button>
+  </div>
+
+  <?php include __DIR__ . '/../includes/bottom-nav.php'; ?>
+</div>
+
+<!-- FILTER MODAL -->
+<div class="modal-overlay" id="filterModal">
+  <div class="filter-modal">
+    <div class="filter-modal-header">
+      <h3>Filter Family Tree</h3>
+      <span class="close-x" onclick="closeFilterModal()">✕</span>
+    </div>
+
+    <div class="filter-section-label">Generation</div>
+    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="3" checked> Grandparents</label>
+    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="2" checked> Parents</label>
+    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="1" checked> You / Siblings / Spouse</label>
+    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="0" checked> Children</label>
+
+    <div class="filter-section-label">Relationship</div>
+    <label class="filter-check-row"><input type="checkbox" class="rel-check" value="parents" checked> Parents</label>
+    <label class="filter-check-row"><input type="checkbox" class="rel-check" value="grandparents" checked> Grandparents</label>
+    <label class="filter-check-row"><input type="checkbox" class="rel-check" value="siblings" checked> Siblings</label>
+    <label class="filter-check-row"><input type="checkbox" class="rel-check" value="children" checked> Children</label>
+
+    <div class="filter-modal-actions">
+      <button type="button" class="btn-outline" onclick="resetFilter()">Reset</button>
+      <button type="button" class="btn-primary" onclick="applyFilter()">Apply Filter</button>
+    </div>
+  </div>
+</div>
