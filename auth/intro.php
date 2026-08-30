@@ -190,3 +190,44 @@ if (isset($_SESSION['user_id'])) {
     box-shadow:0 4px 12px rgba(57,255,136,.25);
 }
 </style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="intro-screen" id="introScreen">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+
+    <div class="hello-text">Hello,</div>
+    <div class="welcome-text">welcome to!</div>
+
+    <div class="logo-circle">
+    <img 
+        src="../assets/images/geogene-logo.png" 
+        alt="GeoGene Logo" 
+        class="logo-img"
+    >
+</div>
+
+    <div class="brand-name">GeoGene</div>
+    <p class="brand-tagline">
+      Discover your family history and geographic lineage in Manolo Fortich, Bukidnon through verified MCRO records.
+    </p>
+
+    <a href="../identity-verification/search-name.php" class="get-started-btn" id="getStartedBtn">Get Started</a>
+  </div>
+</div>
+
+<script>
+// Nindot nga fade/slide-out transition sa dihang mo-click sa "Get Started"
+document.getElementById('getStartedBtn').addEventListener('click', function (e) {
+  e.preventDefault();
+  const href = this.getAttribute('href');
+  document.getElementById('introScreen').classList.add('hide');
+  setTimeout(() => { window.location.href = href; }, 550);
+});
+</script>
+
+</body>
+</html>
