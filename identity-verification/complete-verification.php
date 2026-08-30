@@ -46,3 +46,56 @@ function token_found_in_text(string $token, string $ocrText): bool
 
     return false;
 }
+/**
+ * Compares a person's on-file name (first/middle/last) against OCR'd ID
+ * text. Requires the first name AND last name to both be found (middle
+ * name is often abbreviated, missing, or cut off on real IDs, so it's
+ * treated as a bonus rather than a requirement).
+ */
+function name_matches_ocr(string $firstName, string $lastName, string $ocrText): bool
+{
+    $ocrNorm = normalize_for_match($ocrText);
+    $firstNorm = normalize_for_match($firstName);
+    $lastNorm = normalize_for_match($lastName);
+
+    if ($firstNorm === '' || $lastNorm === '') return false;
+
+    return token_found_in_text($firstNorm, $ocrNorm) && token_found_in_text($lastNorm, $ocrNorm);
+}
+
+/**
+ * Keywords that typically appear on Philippine SCHOOL/STUDENT IDs. Finding
+ * any of these is a hard reject, regardless of whether the name matches -
+ * school IDs are not acceptable for identity verification.
+ */
+const SCHOOL_ID_KEYWORDS = [
+    'STUDENT ID', 'SCHOOL ID', 'STUDENT NO', 'STUDENT NUMBER',
+    'UNIVERSITY', 'COLLEGE OF', 'STATE COLLEGE', 'INSTITUTE OF TECHNOLOGY',
+    'ACADEMY', 'SCHOOL YEAR', 'ENROLLMENT', 'REGISTRAR',
+    'ELEMENTARY SCHOOL', 'SENIOR HIGH SCHOOL', 'JUNIOR HIGH SCHOOL',
+    'DEPARTMENT OF EDUCATION', 'DEPED', 'CHED', 'TESDA', 'COURSE AND YEAR',
+    'GUARDIAN', 'PARENT NAME',
+];
+/**
+ * Keywords commonly found on valid Philippine GOVERNMENT-issued IDs.
+ * Finding at least one of these gives us reasonable confidence the
+ * document is a real government ID and not something else entirely.
+ */
+const GOVERNMENT_ID_KEYWORDS = [
+    'REPUBLIC OF THE PHILIPPINES', 'PHILIPPINE IDENTIFICATION', 'PHILSYS',
+    'PHILIPPINE STATISTICS AUTHORITY', 'DRIVERS LICENSE', "DRIVER'S LICENSE",
+    'LAND TRANSPORTATION OFFICE', 'NON PROFESSIONAL', 'PROFESSIONAL DRIVER',
+    'PASSPORT', 'DEPARTMENT OF FOREIGN AFFAIRS',
+    'SOCIAL SECURITY SYSTEM', ' SSS ', 'GSIS', 'GOVERNMENT SERVICE INSURANCE',
+    'PHILHEALTH', 'PHILIPPINE HEALTH INSURANCE',
+    'COMMISSION ON ELECTIONS', 'COMELEC', 'VOTERS ID', 'VOTER ID',
+    'POSTAL ID', 'PHILIPPINE POSTAL', 'PHLPOST',
+    'SENIOR CITIZEN', 'PERSON WITH DISABILITY', ' PWD ',
+    'UMID', 'UNIFIED MULTI PURPOSE ID',
+    'PROFESSIONAL REGULATION COMMISSION', ' PRC ',
+    'BUREAU OF INTERNAL REVENUE', 'TAXPAYER IDENTIFICATION',
+    'NATIONAL BUREAU OF INVESTIGATION', 'NBI CLEARANCE',
+    'BARANGAY CERTIFICATION', 'BARANGAY ID', 'OFFICE OF THE PUNONG BARANGAY',
+    'PAG IBIG', 'HOME DEVELOPMENT MUTUAL FUND',
+    'AFP', 'ARMED FORCES OF THE PHILIPPINES', 'PHILIPPINE NATIONAL POLICE',
+];
