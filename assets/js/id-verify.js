@@ -56,3 +56,25 @@ async function startCamera() {
 
 // Start camera as soon as the page loads
 startCamera();
+// ---------- CAPTURE (shutter button) ----------
+captureBtn.addEventListener('click', () => {
+  if (!stream) {
+    alert('Wala pa naka-access ang camera. Palihug tugoti ang camera permission.');
+    return;
+  }
+  const w = camStream.videoWidth;
+  const h = camStream.videoHeight;
+  idCanvas.width = w;
+  idCanvas.height = h;
+  const ctx = idCanvas.getContext('2d');
+  ctx.drawImage(camStream, 0, 0, w, h);
+
+  idPreview.src = idCanvas.toDataURL('image/jpeg', 0.9);
+  idPreview.style.display = 'block';
+  camStream.style.display = 'none';
+
+  stopCamera();
+
+  captureRow.style.display = 'none';
+  confirmRow.style.display = 'flex';
+});
