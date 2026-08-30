@@ -136,3 +136,39 @@ function classify_id_document(string $ocrText): array
 
     return ['ok' => true, 'reason' => null];
 }
+
+/**
+ * Best-effort extraction of a birth date from raw (un-normalized) OCR text.
+ * Tries several common ID date formats and validates the result is a
+ * plausible birth year before accepting it. Returns null if nothing
+ * trustworthy is found - this is an auto-fill convenience, not a
+ * requirement, so the person can always fix it later in Edit Profile.
+ */
+function extract_date_of_birth(string $ocrText): ?string
+{
+    $currentYear = (int) date('Y');
+    $months = 'JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:T(?:EMBER)?)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?';
+
+    $patterns = [
+        '/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}\b/',                            // 01/15/1998, 15-01-1998
+        '/\b\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/',                            // 1998-01-15
+        '/\b(?:' . $months . ')[A-Z]*\.?\s+\d{1,2},?\s+\d{4}\b/i',            // JAN 15, 1998
+        '/\b\d{1,2}\s+(?:' . $months . ')[A-Z]*\.?,?\s+\d{4}\b/i',           // 15 JAN 1998
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (!preg_match_all($pattern, $ocrText, $matches)) continue;
+
+        foreach ($matches[0] as $candidate) {
+            $ts = strtotime($candidate);
+            if ($ts === false) continue;
+
+            $year = (int) date('Y', $ts);
+            if ($year < 1900 || $year > $currentYear) continue;
+
+            return date('Y-m-d', $ts);
+        }
+    }
+
+    return null;
+}
