@@ -172,3 +172,29 @@ function extract_date_of_birth(string $ocrText): ?string
 
     return null;
 }
+/**
+ * Best-effort extraction of the person's barangay by checking which known
+ * barangay name (from the `barangays` table) appears in the OCR'd text.
+ * Returns the properly-cased barangay name from the database, or null.
+ */
+function extract_barangay(string $ocrText, PDO $pdo): ?string
+{
+    $norm = normalize_for_match($ocrText);
+    if ($norm === '') return null;
+
+    $barangays = $pdo->query("SELECT name FROM barangays")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($barangays as $bgy) {
+        $bgyNorm = normalize_for_match($bgy);
+        if ($bgyNorm !== '' && str_contains($norm, $bgyNorm)) {
+            return $bgy;
+        }
+    }
+
+    return null;
+}
+
+$ocrText = $_POST['ocr_text'] ?? '';
+if (trim($ocrText) === '') {
+    echo json_encode(['success' => false, 'error' => 'Wala mi-basa og text gikan sa ID. Sulayi og laing litrato nga mas klaro.']);
+    exit;
+}
