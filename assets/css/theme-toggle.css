@@ -1,0 +1,37 @@
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --text-secondary:#555;
+  --text-muted:#999;
+  transition:background .5s ease;
+}
+body.light-bg{
+  background:#f4f4f2;
+  --text-secondary:#555;
+  --text-muted:#999;
+}
+body.dark-bg{
+  background:#0b0f1f;
+  --text-secondary:#c8ccdc;
+  --text-muted:#7a83a8;
+}
+.wrap{display:flex;flex-direction:column;align-items:center;gap:32px;padding:40px 0;}
+.scene{width:120px;height:60px;border-radius:30px;position:relative;overflow:hidden;cursor:pointer;border:2px solid rgba(0,0,0,0.08);box-shadow:0 4px 16px rgba(0,0,0,0.18);transition:all .5s ease;}
+.scene.day{background:linear-gradient(180deg,#5bc8f5 0%,#a8dffa 100%);}
+.scene.night{background:linear-gradient(180deg,#0d1b3e 0%,#1a2e6e 100%);}
+.knob{position:absolute;top:6px;width:48px;height:48px;border-radius:50%;transition:all .5s cubic-bezier(.4,0,.2,1);}
+.knob.day{left:6px;background:radial-gradient(circle at 35% 35%,#ffe066,#f5c518);box-shadow:0 0 18px 6px rgba(255,200,0,0.45);}
+.knob.night{left:66px;background:radial-gradient(circle at 38% 30%,#d0d8f0,#9aa8c8);box-shadow:0 0 12px 4px rgba(120,140,200,0.35);}
+.crater{position:absolute;border-radius:50%;background:rgba(0,0,0,0.10);}
+.cloud{position:absolute;background:#fff;border-radius:50px;opacity:0;transition:opacity .4s ease .1s;}
+.star{position:absolute;background:#fff;border-radius:50%;opacity:0;transition:opacity .4s ease;}
+.scene.day .cloud{opacity:0.92;}
+.scene.night .star{opacity:1;}
+.scene.night .cloud{opacity:0;}
+.scene.day .star{opacity:0;}
+.label{font-size:14px;font-weight:500;color:var(--text-secondary);transition:color .3s ease;letter-spacing:0.01em;}
+.row{display:flex;align-items:center;gap:16px;}
