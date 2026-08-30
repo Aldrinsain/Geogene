@@ -22,3 +22,10 @@ if (!isset($_SESSION['user_id']) && empty($_SESSION['matched_record_id'])) {
 // GeoGene - ID Verification Flow (Scan -> Verify -> Result)
 // Ibutang ni nga file ug ang id_verify.css / id_verify.js sa parehas nga folder sa XAMPP htdocs
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoGene - ID Verification</title>
+<link rel="stylesheet" href="../assets/css/id-verify.css">
