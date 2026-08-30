@@ -99,3 +99,40 @@ const GOVERNMENT_ID_KEYWORDS = [
     'PAG IBIG', 'HOME DEVELOPMENT MUTUAL FUND',
     'AFP', 'ARMED FORCES OF THE PHILIPPINES', 'PHILIPPINE NATIONAL POLICE',
 ];
+
+/**
+ * Classifies the scanned document as a school ID (reject), an
+ * unrecognized/unclear document (reject, ask for a clearer government ID),
+ * or an acceptable government-issued ID (pass).
+ */
+function classify_id_document(string $ocrText): array
+{
+    $norm = normalize_for_match($ocrText);
+    $padded = ' ' . $norm . ' '; // so keyword edges like ' SSS ' can match cleanly
+
+    foreach (SCHOOL_ID_KEYWORDS as $kw) {
+        if (str_contains($padded, normalize_for_match($kw))) {
+            return [
+                'ok' => false,
+                'reason' => 'Dili dawaton ang School ID. Palihug gamit og valid GOVERNMENT-issued ID (pananglit: PhilID/National ID, Driver\'s License, Passport, UMID, PhilHealth ID, Postal ID, Voter\'s ID, o Barangay ID).',
+            ];
+        }
+    }
+
+    $hasGovKeyword = false;
+    foreach (GOVERNMENT_ID_KEYWORDS as $kw) {
+        if (str_contains($padded, normalize_for_match($kw))) {
+            $hasGovKeyword = true;
+            break;
+        }
+    }
+
+    if (!$hasGovKeyword) {
+        return [
+            'ok' => false,
+            'reason' => 'Wala mi-confirm nga valid government-issued ID ni. Siguraduhon nga klaro ang litrato ug gamit og opisyal nga gobyerno ID (PhilID, Driver\'s License, Passport, UMID, PhilHealth, Postal ID, Voter\'s ID, o Barangay ID).',
+        ];
+    }
+
+    return ['ok' => true, 'reason' => null];
+}
