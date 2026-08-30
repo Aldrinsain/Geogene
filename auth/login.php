@@ -50,3 +50,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Login</title>
 <link rel="stylesheet" href="../assets/css/main.css">
+<style>
+  .title {
+    text-align: center;
+    margin: 0 auto 8px;
+    color: #f2f4fa;
+    font-weight: 800;
+}
+
+.subtitle {
+    text-align: center;
+    margin: 0 auto 22px;
+    color: #8a93b8;
+    font-size: 14px;
+}
+</style>
