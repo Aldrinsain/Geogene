@@ -16,3 +16,15 @@ function normalize_for_match(string $s): string
     $s = preg_replace('/\s+/', ' ', $s);
     return trim($s);
 }
+/**
+ * Checks whether a single name token (e.g. "DELA CRUZ" or "JUAN") appears
+ * in the OCR'd ID text - either as an exact substring, or (to tolerate
+ * common OCR misreads like O/0, I/1, S/5) as a close fuzzy match against
+ * any word-window of the same length in the OCR text.
+ */
+function token_found_in_text(string $token, string $ocrText): bool
+{
+    $token = trim($token);
+    if ($token === '') return true; // nothing required, trivially "found"
+
+    if (str_contains($ocrText, $token)) return true;
