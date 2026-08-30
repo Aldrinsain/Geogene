@@ -18,7 +18,7 @@ const verifyStatus = document.getElementById('verifyStatus');
 
 let stream = null;
 
-/ ---------- CAMERA ----------
+// ---------- CAMERA ----------
 async function startCamera() {
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -78,3 +78,23 @@ captureBtn.addEventListener('click', () => {
   captureRow.style.display = 'none';
   confirmRow.style.display = 'flex';
 });
+
+// ---------- CONFIRM (proceed to verification) ----------
+confirmBtn.addEventListener('click', () => {
+  showScreen(screenVerify);
+  runVerification();
+});
+
+// ---------- RETAKE ----------
+retakeBtn.addEventListener('click', () => {
+  idPreview.style.display = 'none';
+  idPreview.src = '';
+  confirmRow.style.display = 'none';
+  captureRow.style.display = 'flex';
+  startCamera();
+});
+
+function showScreen(target) {
+  [screenScan, screenVerify, screenResult].forEach(s => s.classList.remove('active'));
+  target.classList.add('active');
+}
