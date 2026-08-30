@@ -253,3 +253,41 @@ if (isset($_SESSION['user_id'])) {
     echo json_encode(['success' => true, 'verified' => $verified, 'extracted' => $extracted]);
     exit;
 }
+
+// ---------- CASE 2: Wala pay account (pre-registration - Search Name -> Scan ID -> Register) ----------
+if (!empty($_SESSION['matched_record_id'])) {
+    $stmt = $pdo->prepare("SELECT first_name, last_name FROM civil_registry_records WHERE record_id = ?");
+    $stmt->execute([$_SESSION['matched_record_id']]);
+    $record = $stmt->fetch();
+
+    if (!$record) {
+        echo json_encode(['success' => false, 'error' => 'Wala na-verify ang record. Sulayi og balik sa Search Full Name.']);
+        exit;
+    }
+
+    $verified = name_matches_ocr($record['first_name'], $record['last_name'], $ocrText);
+    $extracted = ['date_of_birth' => null, 'barangay' => null];
+
+    // Wala pay user account nga i-update sa DB karon - i-mark ra sa session
+    // nga na-pass na ang ID scan, para tugotan sa welcome.php (Register) ang
+    // pag-create og account nga diretso na "identity_verified". Ang
+    // date of birth/barangay nga na-basa gikan sa ID gitipigan pud sa
+    // session, para diretso na ma-save sa bag-ong account sa Register step -
+    // dili na kinahanglan i-type pag-usab sa user.
+    $_SESSION['identity_scan_verified'] = $verified;
+
+    if ($verified) {
+        $dob = extract_date_of_birth($ocrText);
+        $bgy = extract_barangay($ocrText, $pdo);
+        $_SESSION['ocr_date_of_birth'] = $dob;
+        $_SESSION['ocr_barangay'] = $bgy;
+        $extracted = ['date_of_birth' => $dob, 'barangay' => $bgy];
+    }
+
+    echo json_encode(['success' => true, 'verified' => $verified, 'extracted' => $extracted]);
+    exit;
+}
+
+// ---------- Walay session context gyud ----------
+http_response_code(401);
+echo json_encode(['success' => false, 'error' => 'No active verification session']);
