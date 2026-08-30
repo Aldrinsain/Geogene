@@ -205,3 +205,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
   .warn-banner a{color:#ffd27a;font-weight:700;}
 </style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="auth-screen">
+    <a href="intro.php" class="back-arrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </a>
+
+    <div class="auth-header">
+      <div class="auth-logo"><?= geogene_logo(40, '#39FF88') ?></div>
+      <div class="auth-title">Create Your Account</div>
+      <p class="auth-sub">Confirm your name using the official MCRO records before creating your GeoGene account.</p>
+    </div>
+
+    <form method="POST" action="welcome.php">
+      <?php if ($registerError): ?>
+        <div class="form-error"><?= htmlspecialchars($registerError) ?></div>
+      <?php endif; ?>
+
+      <?php if (!$hasMatchedRecord): ?>
+        <div class="warn-banner">
+          ⚠ Kinahanglan una nga i-search ug ma-verify ang imong full name sa
+          <a href="../identity-verification/search-name.php">MCRO records</a> una ka makahimo og account.
+        </div>
+      <?php endif; ?>
+
+      <div class="field-group">
+        <span class="field-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#b4b5b3">
+            <g clip-path="url(#clip0_3111_32659)">
+              <path opacity="0.4" d="M21.09 21.5C21.09 21.78 20.87 22 20.59 22H3.41003C3.13003 22 2.91003 21.78 2.91003 21.5C2.91003 17.36 6.99003 14 12 14C13.03 14 14.03 14.14 14.95 14.41C14.36 15.11 14 16.02 14 17C14 17.75 14.21 18.46 14.58 19.06C14.78 19.4 15.04 19.71 15.34 19.97C16.04 20.61 16.97 21 18 21C19.12 21 20.13 20.54 20.85 19.8C21.01 20.34 21.09 20.91 21.09 21.5Z" fill="white" style="fill: var(--fillg);"/>
+              <path d="M21.88 16.0398C21.78 15.6498 21.62 15.2598 21.4 14.9098C21.25 14.6498 21.05 14.3998 20.83 14.1698C20.11 13.4498 19.17 13.0598 18.21 13.0098C17.12 12.9398 16.01 13.3398 15.17 14.1698C14.38 14.9598 13.98 16.0098 14 17.0598C14.01 18.0598 14.41 19.0598 15.17 19.8298C15.7 20.3598 16.35 20.7098 17.04 20.8698C17.42 20.9698 17.82 21.0098 18.22 20.9798C19.17 20.9398 20.1 20.5598 20.83 19.8298C21.86 18.7998 22.21 17.3498 21.88 16.0398ZM19.6 18.5998C19.31 18.8898 18.83 18.8898 18.54 18.5998L17.99 18.0498L17.46 18.5798C17.17 18.8698 16.69 18.8698 16.4 18.5798C16.11 18.2798 16.11 17.8098 16.4 17.5198L16.93 16.9898L16.42 16.4898C16.13 16.1898 16.13 15.7198 16.42 15.4198C16.72 15.1298 17.19 15.1298 17.49 15.4198L17.99 15.9298L18.52 15.3998C18.81 15.1098 19.28 15.1098 19.58 15.3998C19.87 15.6898 19.87 16.1698 19.58 16.4598L19.05 16.9898L19.6 17.5398C19.89 17.8298 19.89 18.3098 19.6 18.5998Z" fill="white" style="fill: var(--fillg);"/>
+              <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" fill="white" style="fill: var(--fillg);"/>
+            </g>
+            <defs><clipPath id="clip0_3111_32659"><rect width="24" height="24" fill="white"/></clipPath></defs>
+          </svg>
+        </span>
+        <input type="text" name="full_name" class="field-input" placeholder="Full Name"
+               value="<?= htmlspecialchars($suggestedName) ?>" required>
+      </div>
+
+      <div class="field-group">
+        <span class="field-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b4b5b3" stroke-width="1.8">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 6l10 7 10-7"/>
+          </svg>
+        </span>
+        <input type="email" name="email" class="field-input" placeholder="Email Address" required>
+      </div>
+
+      <div class="field-group">
+        <span class="field-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <g clip-path="url(#clip0_4418_9529)">
+              <path d="M6 10V8C6 4.69 7 2 12 2C17 2 18 4.69 18 8V10" stroke="#b4b5b3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M12 18.5C13.3807 18.5 14.5 17.3807 14.5 16C14.5 14.6193 13.3807 13.5 12 13.5C10.6193 13.5 9.5 14.6193 9.5 16C9.5 17.3807 10.6193 18.5 12 18.5Z" stroke="#b4b5b3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M17 22H7C3 22 2 21 2 17V15C2 11 3 10 7 10H17C21 10 22 11 22 15V17C22 21 21 22 17 22Z" stroke="#b4b5b3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </g>
+            <defs><clipPath id="clip0_4418_9529"><rect width="24" height="24" fill="white"/></clipPath></defs>
+          </svg>
+        </span>
+        <input type="password" name="password" id="signupPassword" class="field-input" placeholder="Password (at least 8 characters)" required>
+        <span class="pw-toggle" onclick="toggleFieldPw('signupPassword', this)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#b4b5b3">
+            <g clip-path="url(#clip0_4418_8295)">
+              <path d="M21.25 9.14969C18.94 5.51969 15.56 3.42969 12 3.42969C10.22 3.42969 8.49 3.94969 6.91 4.91969C5.33 5.89969 3.91 7.32969 2.75 9.14969C1.75 10.7197 1.75 13.2697 2.75 14.8397C5.06 18.4797 8.44 20.5597 12 20.5597C13.78 20.5597 15.51 20.0397 17.09 19.0697C18.67 18.0897 20.09 16.6597 21.25 14.8397C22.25 13.2797 22.25 10.7197 21.25 9.14969ZM12 16.0397C9.76 16.0397 7.96 14.2297 7.96 11.9997C7.96 9.76969 9.76 7.95969 12 7.95969C14.24 7.95969 16.04 9.76969 16.04 11.9997C16.04 14.2297 14.24 16.0397 12 16.0397Z" fill="white" style="fill: var(--fillg);"/>
+              <path d="M11.9999 9.14062C10.4299 9.14062 9.1499 10.4206 9.1499 12.0006C9.1499 13.5706 10.4299 14.8506 11.9999 14.8506C13.5699 14.8506 14.8599 13.5706 14.8599 12.0006C14.8599 10.4306 13.5699 9.14062 11.9999 9.14062Z" fill="white" style="fill: var(--fillg);"/>
+            </g>
+            <defs><clipPath id="clip0_4418_8295"><rect width="24" height="24" fill="white"/></clipPath></defs>
+          </svg>
+        </span>
+      </div>
+
+      <div class="field-group">
+        <span class="field-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#b4b5b3">
+            <g clip-path="url(#clip0_4418_4653)">
+              <path opacity="0.4" d="M12.0001 17.3498C12.9003 17.3498 13.6301 16.6201 13.6301 15.7198C13.6301 14.8196 12.9003 14.0898 12.0001 14.0898C11.0999 14.0898 10.3701 14.8196 10.3701 15.7198C10.3701 16.6201 11.0999 17.3498 12.0001 17.3498Z" fill="white" style="fill: var(--fillg);"/>
+              <path d="M16.65 9.43945H7.35C3.25 9.43945 2 10.6895 2 14.7895V16.6495C2 20.7495 3.25 21.9995 7.35 21.9995H16.65C20.75 21.9995 22 20.7495 22 16.6495V14.7895C22 10.6895 20.75 9.43945 16.65 9.43945ZM12 18.7395C10.33 18.7395 8.98 17.3795 8.98 15.7195C8.98 14.0595 10.33 12.6995 12 12.6995C13.67 12.6995 15.02 14.0595 15.02 15.7195C15.02 17.3795 13.67 18.7395 12 18.7395Z" fill="white" style="fill: var(--fillg);"/>
+              <path opacity="0.4" d="M7.12021 9.45V8.28C7.12021 5.35 7.95021 3.4 12.0002 3.4C16.0502 3.4 16.8802 5.35 16.8802 8.28V9.45C17.3902 9.46 17.8502 9.48 18.2802 9.54V8.28C18.2802 5.58 17.6302 2 12.0002 2C6.37021 2 5.72021 5.58 5.72021 8.28V9.53C6.14021 9.48 6.61021 9.45 7.12021 9.45Z" fill="white" style="fill: var(--fillg);"/>
+            </g>
+            <defs><clipPath id="clip0_4418_4653"><rect width="24" height="24" fill="white"/></clipPath></defs>
+          </svg>
+        </span>
+        <input type="password" name="confirm_password" id="signupConfirmPassword" class="field-input" placeholder="Confirm Password" required>
+        <span class="pw-toggle" onclick="toggleFieldPw('signupConfirmPassword', this)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#b4b5b3">
+            <g clip-path="url(#clip0_4418_8295)">
+              <path d="M21.25 9.14969C18.94 5.51969 15.56 3.42969 12 3.42969C10.22 3.42969 8.49 3.94969 6.91 4.91969C5.33 5.89969 3.91 7.32969 2.75 9.14969C1.75 10.7197 1.75 13.2697 2.75 14.8397C5.06 18.4797 8.44 20.5597 12 20.5597C13.78 20.5597 15.51 20.0397 17.09 19.0697C18.67 18.0897 20.09 16.6597 21.25 14.8397C22.25 13.2797 22.25 10.7197 21.25 9.14969ZM12 16.0397C9.76 16.0397 7.96 14.2297 7.96 11.9997C7.96 9.76969 9.76 7.95969 12 7.95969C14.24 7.95969 16.04 9.76969 16.04 11.9997C16.04 14.2297 14.24 16.0397 12 16.0397Z" fill="white" style="fill: var(--fillg);"/>
+              <path d="M11.9999 9.14062C10.4299 9.14062 9.1499 10.4206 9.1499 12.0006C9.1499 13.5706 10.4299 14.8506 11.9999 14.8506C13.5699 14.8506 14.8599 13.5706 14.8599 12.0006C14.8599 10.4306 13.5699 9.14062 11.9999 9.14062Z" fill="white" style="fill: var(--fillg);"/>
+            </g>
+            <defs><clipPath id="clip0_4418_8295"><rect width="24" height="24" fill="white"/></clipPath></defs>
+          </svg>
+        </span>
+      </div>
+
+      <label class="terms-row">
+        <input type="checkbox" required>
+        <span>I confirm my name matches the official MCRO records before creating my GeoGene account.</span>
+      </label>
+
+      <button type="submit" class="submit-btn" <?= !$hasMatchedRecord ? 'disabled' : '' ?>>Register Account</button>
+      <p class="switch-line">Already have an account? <a href="login.php" style="color:#39FF88;font-weight:700;text-decoration:none;">Login</a></p>
+    </form>
+  </div>
+</div>
