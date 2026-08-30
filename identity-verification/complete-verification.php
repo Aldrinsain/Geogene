@@ -198,3 +198,33 @@ if (trim($ocrText) === '') {
     echo json_encode(['success' => false, 'error' => 'Wala mi-basa og text gikan sa ID. Sulayi og laing litrato nga mas klaro.']);
     exit;
 }
+// Reject school IDs / unrecognized documents before even checking the name -
+// only valid government-issued IDs are accepted for identity verification.
+$idCheck = classify_id_document($ocrText);
+if (!$idCheck['ok']) {
+    echo json_encode(['success' => true, 'verified' => false, 'error' => $idCheck['reason']]);
+    exit;
+}
+// ---------- CASE 1: Naka-login na (returning user, re-scan case) ----------
+if (isset($_SESSION['user_id'])) {
+    $userId = $_SESSION['user_id'];
+
+    $stmt = $pdo->prepare("SELECT full_name, date_of_birth, barangay FROM users WHERE user_id = ?");
+    $stmt->execute([$userId]);
+    $existingUser = $stmt->fetch();
+    $fullName = $existingUser['full_name'];
+
+    $parts = preg_split('/\s+/', trim($fullName));
+    $firstName = $parts[0] ?? '';
+    $lastName = end($parts) ?: '';
+
+    $verified = name_matches_ocr($firstName, $lastName, $ocrText);
+    $extracted = ['date_of_birth' => null, 'barangay' => null];
+
+    if ($verified) {
+        $pdo->prepare("UPDATE users SET identity_verified = 1 WHERE user_id = ?")->execute([$userId]);
+        $pdo->prepare("
+            INSERT INTO identity_verifications (user_id, verification_method, status, verified_at)
+            VALUES (?, 'id_scan', 'verified', NOW())
+        ")->execute([$userId]);
+        $_SESSION['identity_verified'] = 1;
