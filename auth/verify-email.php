@@ -84,3 +84,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Verify Email</title>
 <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+
+<div class="phone">
+  <div class="app-header">
+    <a href="welcome.php" class="back-arrow">&larr;</a>
+    <span>GeoGene</span>
+  </div>
+
+  <?php if (!$success): ?>
+    <div class="icon-circle green">✉</div>
+    <h1 class="title center">Enter Verification Code</h1>
+    <p class="subtitle center">We sent a 6-digit code to<br><strong><?= htmlspecialchars($email) ?></strong></p>
+
+    <?php if ($error): ?>
+      <p class="error-text" style="text-align:center;"><?= htmlspecialchars($error) ?></p>
+    <?php endif; ?>
+
+    <?php if (!empty($_SESSION['dev_otp_preview'])): ?>
+      <div style="background:#fff8e1;border:1px solid #f0c95a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:#7a5c00;text-align:center;">
+        ⚠ <strong>DEV MODE</strong> — wala pa na-setup ang SMTP email.<br>
+        Imong OTP code: <strong style="font-size:16px;letter-spacing:3px;"><?= htmlspecialchars($_SESSION['dev_otp_preview']) ?></strong>
+      </div>
+    <?php endif; ?>
+
+    <form method="POST" action="verify-email.php" id="otpForm">
+      <div class="otp-wrap">
+        <?php for ($i = 0; $i < 6; $i++): ?>
+          <input type="text" name="otp[]" maxlength="1" inputmode="numeric" class="otp-box" autocomplete="off">
+        <?php endfor; ?>
+      </div>
+      <button type="submit" class="btn-primary">Verify Code</button>
+    </form>
+
+    <p class="footer-text">Wala nimo nadawat ang code? <a href="verify-email.php?resend=1">Resend Code</a></p>
+  <?php else: ?>
+    <div class="icon-circle green">✔</div>
+    <h1 class="title center">Email Verified!</h1>
+    <p class="subtitle center">Your email has been successfully verified. Welcome to GeoGene, <?= htmlspecialchars(explode(' ', $_SESSION['full_name'] ?? '')[0] ?? '') ?>!</p>
+    <a href="../dashboard/dashboard.php" class="btn-primary" style="text-decoration:none;">Continue to Dashboard</a>
+  <?php endif; ?>
+</div>
