@@ -228,3 +228,28 @@ if (isset($_SESSION['user_id'])) {
             VALUES (?, 'id_scan', 'verified', NOW())
         ")->execute([$userId]);
         $_SESSION['identity_verified'] = 1;
+
+        // Best-effort auto-fill: only backfill fields the person hasn't
+        // already set themselves, never overwrite existing data.
+        $dob = empty($existingUser['date_of_birth']) ? extract_date_of_birth($ocrText) : null;
+        $bgy = empty($existingUser['barangay']) ? extract_barangay($ocrText, $pdo) : null;
+
+        if ($dob || $bgy) {
+            $setParts = [];
+            $params = [];
+            if ($dob) { $setParts[] = 'date_of_birth = ?'; $params[] = $dob; }
+            if ($bgy) { $setParts[] = 'barangay = ?'; $params[] = $bgy; }
+            $params[] = $userId;
+            $pdo->prepare("UPDATE users SET " . implode(', ', $setParts) . " WHERE user_id = ?")->execute($params);
+        }
+        $extracted = ['date_of_birth' => $dob, 'barangay' => $bgy];
+    } else {
+        $pdo->prepare("
+            INSERT INTO identity_verifications (user_id, verification_method, status, verified_at)
+            VALUES (?, 'id_scan', 'failed', NOW())
+        ")->execute([$userId]);
+    }
+
+    echo json_encode(['success' => true, 'verified' => $verified, 'extracted' => $extracted]);
+    exit;
+}
