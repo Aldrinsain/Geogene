@@ -82,3 +82,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Register Account</title>
 <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+
+<div class="phone">
+  <div class="app-header">
+    <a href="../identity-verification/search-name.php" class="back-arrow">&larr;</a>
+    <span>GeoGene</span>
+  </div>
+
+  <h1 class="title">Create Your Account</h1>
+  <p class="subtitle">Confirm your name using the official MCRO records before creating your GeoGene account.</p>
+
+  <?php if ($error): ?>
+    <p class="error-text"><?= htmlspecialchars($error) ?></p>
+  <?php endif; ?>
+
+  <form method="POST" action="register.php" autocomplete="off">
+    <!-- Decoy fields: browsers try to autofill the first username/password-looking
+         inputs they see, so we give them harmless ones to fill instead, hidden
+         from the person, leaving the real fields below untouched. -->
+    <input type="text" name="fake_username" autocomplete="username" tabindex="-1" aria-hidden="true"
+           style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;">
+    <input type="password" name="fake_password" autocomplete="new-password" tabindex="-1" aria-hidden="true"
+           style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;">
+
+    <div class="form-group">
+      <label class="form-label">Full Name</label>
+      <input type="text" name="full_name" class="form-input" placeholder="Juan Dela Cruz" required
+             autocomplete="off" readonly onfocus="this.removeAttribute('readonly');"
+             value="<?= htmlspecialchars($_POST['full_name'] ?? $suggestedName) ?>">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input type="email" name="email" class="form-input" placeholder="you@example.com" required
+             autocomplete="off" readonly onfocus="this.removeAttribute('readonly');"
+             value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div class="input-icon-wrap">
+        <input type="password" name="password" id="password" class="form-input" placeholder="At least 8 characters"
+               autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');" required>
+        <span class="input-icon" onclick="togglePw('password', this)">👁</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Confirm Password</label>
+      <div class="input-icon-wrap">
+        <input type="password" name="confirm_password" id="confirm_password" class="form-input" placeholder="Re-enter password"
+               autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');" required>
+        <span class="input-icon" onclick="togglePw('confirm_password', this)">👁</span>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary">Create an Account</button>
+  </form>
+
+  <p class="footer-text">Already have an account? <a href="login.php">Login</a></p>
+</div>
