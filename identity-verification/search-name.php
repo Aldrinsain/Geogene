@@ -939,3 +939,42 @@ $fullName = $_SESSION['search_full_name'] ?? '';
     <button type="button" class="btn-primary" onclick="showScreen('screen-search')" style="border:none;">Search Again</button>
   </section>
 </div>
+<script>
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function doSearch() {
+  const name = document.getElementById('fullNameInput').value.trim();
+  if (!name) {
+    alert('Palihug i-type ang imong full name.');
+    return;
+  }
+
+  showScreen('screen-searching');
+  document.querySelector('.progress-fill').style.animation = 'none';
+  void document.querySelector('.progress-fill').offsetWidth;
+  document.querySelector('.progress-fill').style.animation = 'fillProgress 2.6s ease forwards';
+
+  try {
+    const res = await fetch('check-name.php?full_name=' + encodeURIComponent(name));
+    const data = await res.json();
+
+    setTimeout(() => {
+      if (data.found) {
+        document.getElementById('proceedBtn').href =
+          '../identity-verification/scan-id.php?record_id=' + data.record.record_id + '&name=' + encodeURIComponent(name);
+        showScreen('screen-found');
+      } else {
+        showScreen('screen-notfound');
+      }
+    }, 2700);
+  } catch (err) {
+    alert('Naay sayop sa pag-search. Sulayi og usab.');
+    showScreen('screen-search');
+  }
+}
+</script>
+</body>
+</html>
