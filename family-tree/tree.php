@@ -227,3 +227,46 @@ function nodeHtml($p, $gen, $rel, $isSelf = false) {
     </div>
   </div>
 </div>
+<script>
+function openFilterModal() { document.getElementById('filterModal').classList.add('active'); }
+function closeFilterModal() { document.getElementById('filterModal').classList.remove('active'); }
+
+function applyFilter() {
+  const allowedGens = [...document.querySelectorAll('.gen-check:checked')].map(c => c.value);
+  const allowedRels = [...document.querySelectorAll('.rel-check:checked')].map(c => c.value);
+
+  document.querySelectorAll('.tree-node').forEach(node => {
+    const gen = node.dataset.gen;
+    const rel = node.dataset.rel;
+    // "You" node (rel=self) always stays visible
+    const genOk = rel === 'self' || allowedGens.includes(gen);
+    const relOk = rel === 'self' || rel === 'spouse' || allowedRels.includes(rel);
+    node.style.display = (genOk && relOk) ? '' : 'none';
+  });
+
+  closeFilterModal();
+}
+
+function resetFilter() {
+  document.querySelectorAll('.gen-check, .rel-check').forEach(c => c.checked = true);
+  document.querySelectorAll('.tree-node').forEach(node => node.style.display = '');
+}
+
+let zoomLevel = 100;
+function zoom(delta) {
+  zoomLevel = Math.max(50, Math.min(150, zoomLevel + delta));
+  document.getElementById('zoomLabel').textContent = zoomLevel + '%';
+  const diagram = document.querySelector('.tree-diagram');
+  if (diagram) diagram.style.transform = 'scale(' + (zoomLevel / 100) + ')';
+}
+
+document.getElementById('filterInput').addEventListener('input', function () {
+  const term = this.value.toLowerCase();
+  document.querySelectorAll('.tree-node').forEach(node => {
+    const name = node.querySelector('.tree-name').textContent.toLowerCase();
+    node.style.opacity = name.includes(term) ? '1' : '0.25';
+  });
+});
+</script>
+</body>
+</html>
