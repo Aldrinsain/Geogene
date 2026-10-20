@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/includes/name-format.php';
 
 // ---------- Pull ALL civil registry records + their linked account (if any) ----------
 // Every record with a barangay that matches a known coordinate is plottable
@@ -11,7 +12,7 @@ $stmt = $pdo->query("
     SELECT
         cr.record_id, cr.registry_type, cr.registry_number,
         cr.first_name, cr.middle_name, cr.last_name, cr.sex,
-        cr.date_of_event, cr.barangay, cr.father_name, cr.mother_name, cr.spouse_name,
+        cr.date_of_event, cr.barangay, cr.zone, cr.father_name, cr.mother_name, cr.spouse_name,
         u.user_id, u.full_name AS account_name, u.identity_verified
     FROM civil_registry_records cr
     LEFT JOIN users u ON u.matched_record_id = cr.record_id
@@ -25,6 +26,25 @@ $allRecords = $stmt->fetchAll();
 $barangayCoords = [];
 foreach ($pdo->query("SELECT name, latitude, longitude FROM barangays") as $b) {
     $barangayCoords[strtolower(trim($b['name']))] = [$b['latitude'], $b['longitude'], $b['name']];
+}
+
+// Common real-world spelling variants that staff might type in Civil
+// Registry Records but that don't exactly match the "official" name
+// stored above - point them at the same coordinate instead of silently
+// failing to plot. (Add more pairs here if another variant shows up.)
+$barangayAliases = [
+    'santo nino'       => 'sto. niño',
+    'santo niño'       => 'sto. niño',
+    'tankulan'         => 'tankulan (pob.)',
+    'poblacion'        => 'tankulan (pob.)',
+    'diclum'           => 'dicklum',
+    'lingi-on'         => 'lingion',
+    'lingi on'         => 'lingion',
+];
+foreach ($barangayAliases as $alias => $canonical) {
+    if (!isset($barangayCoords[$alias]) && isset($barangayCoords[$canonical])) {
+        $barangayCoords[$alias] = $barangayCoords[$canonical];
+    }
 }
 
 // Records whose barangay text doesn't match any known barangay at all
@@ -50,7 +70,17 @@ require_once __DIR__ . '/includes/staff-header.php';
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-  #staffMap{width:100%;height:520px;border-radius:12px;}
+  /* position + z-index here traps Leaflet's internal controls (zoom +/-,
+     attribution, etc.) inside this element's own stacking context so they
+     can never paint on top of the sticky topbar header above, no matter
+     how far the page is scrolled. */
+  #staffMap{width:100%;height:520px;border-radius:12px;position:relative;z-index:0;}
+  .ft-marker-label{
+    background:#fff;border:1.5px solid var(--primary,#1c6b3f);border-radius:6px;
+    padding:2px 8px;font-size:11.5px;font-weight:700;color:#1a1a1a;
+    box-shadow:0 1px 4px rgba(0,0,0,0.18);white-space:nowrap;
+  }
+  .ft-marker-label::before{border-top-color:var(--primary,#1c6b3f);}
   .map-legend{
     display:flex;gap:18px;flex-wrap:wrap;align-items:center;
     font-size:12px;color:var(--text-secondary);margin-bottom:14px;
@@ -68,6 +98,24 @@ require_once __DIR__ . '/includes/staff-header.php';
   .record-popup .rp-badge.birth{background:#e4f5e9;color:#1b6e3c;}
   .record-popup .rp-badge.marriage{background:#e7f1fc;color:#3a8ee0;}
   .record-popup .rp-badge.death{background:#f0f0f0;color:#6b6b6b;}
+
+
+  /* Family books counter (right side of the search row) */
+  .map-search-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+  .map-search-row .map-search-wrap{margin-bottom:0;flex:1 1 320px;}
+  .family-count{
+    display:flex;align-items:center;gap:10px;background:var(--bg-page);border:1px solid var(--border);
+    border-radius:12px;padding:7px 14px;flex-shrink:0;
+  }
+  .family-count .fc-num{
+    min-width:44px;text-align:center;font-size:22px;font-weight:800;line-height:1;color:var(--text-muted);
+    background:#fff;border:1px solid var(--border);border-radius:999px;padding:6px 12px;transition:all .2s ease;
+  }
+  .family-count.active .fc-num{color:#fff;background:#7c3aed;border-color:#7c3aed;}
+  .family-count .fc-label{font-size:11.5px;font-weight:700;color:var(--text-secondary);line-height:1.3;}
+  .family-count .fc-label small{display:block;font-weight:500;color:var(--text-muted);font-size:10.5px;}
+  body.dark-mode .family-count .fc-num{background:#1c2420;}
+  body.dark-mode .family-count.active .fc-num{background:#7c3aed;}
 
   .map-search-wrap{position:relative;margin-bottom:16px;max-width:420px;}
   .map-search-box{
@@ -134,13 +182,23 @@ require_once __DIR__ . '/includes/staff-header.php';
   }
   .family-item.unmapped{cursor:default;opacity:.75;}
   .family-item.unmapped:hover{border-color:#eee0fb;background:#fff;}
+
+  /* ---------- Dark mode ---------- */
+  body.dark-mode .map-search-results{ background:#1c2420; border-color:var(--border); }
+  body.dark-mode .map-search-item{ border-bottom-color:var(--border); }
+  body.dark-mode .family-panel{ background:#241a33; border-color:#3d2a57; }
+  body.dark-mode .family-panel .fp-title{ color:#c9a3ff; }
+  body.dark-mode .family-item{ background:#1c2420; border-color:#3d2a57; }
+  body.dark-mode .family-item:hover{ border-color:#a855f7; background:#2a1f3d; }
+  body.dark-mode .family-item.unmapped:hover{ border-color:#3d2a57; background:#1c2420; }
+  body.dark-mode .family-item .fi-relation{ color:#e9d5ff; background:#3d2a57; }
 </style>
 
 <?php if (!$hasCoordsMigration): ?>
   <div class="error-text">
-    Wala pa na-import ang barangay coordinates. Palihug i-import una ang
+    The barangay coordinates have not been imported yet. Please import
     <strong>migrations/add-barangay-coordinates.sql</strong> sa phpMyAdmin (SQL tab)
-    para mag-appear ang mga markers sa mapa.
+    first so the markers appear on the map.
   </div>
 <?php elseif ($unmappedCount > 0): ?>
   <div class="error-text">
@@ -154,7 +212,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="stat-card"><div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
   <path d="M4.5 6.375a4.125 4.125 0 1 1 8.25 0 4.125 4.125 0 0 1-8.25 0ZM14.25 8.625a3.375 3.375 0 1 1 6.75 0 3.375 3.375 0 0 1-6.75 0ZM1.5 19.125a7.125 7.125 0 0 1 14.25 0v.003l-.001.119a.75.75 0 0 1-.363.63 13.067 13.067 0 0 1-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 0 1-.364-.63l-.001-.122ZM17.25 19.128l-.001.144a2.25 2.25 0 0 1-.233.96 10.088 10.088 0 0 0 5.06-1.01.75.75 0 0 0 .42-.643 4.875 4.875 0 0 0-6.957-4.611 8.586 8.586 0 0 1 1.71 5.157v.003Z" />
 </svg>
-</div><div><div class="stat-num"><?= number_format($totalIndividuals) ?></div><div class="stat-label">Individuals on Map</div></div></div>
+</div><div><div class="stat-num"><?= number_format($totalIndividuals) ?></div><div class="stat-label">Individuals Searchable on Map</div></div></div>
   <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
   <path fill-rule="evenodd" d="M8.603 3.799A4.49 4.49 0 0 1 12 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 0 1 3.498 1.307 4.491 4.491 0 0 1 1.307 3.497A4.49 4.49 0 0 1 21.75 12a4.49 4.49 0 0 1-1.549 3.397 4.491 4.491 0 0 1-1.307 3.497 4.491 4.491 0 0 1-3.497 1.307A4.49 4.49 0 0 1 12 21.75a4.49 4.49 0 0 1-3.397-1.549 4.49 4.49 0 0 1-3.498-1.306 4.491 4.491 0 0 1-1.307-3.498A4.49 4.49 0 0 1 2.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 0 1 1.307-3.497 4.49 4.49 0 0 1 3.497-1.307Zm7.007 6.387a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clip-rule="evenodd" />
 </svg>
@@ -166,8 +224,9 @@ require_once __DIR__ . '/includes/staff-header.php';
 </div>
 
 <div class="panel">
-  <div class="panel-header"><span class="panel-title">Family Distribution Map</span></div>
-
+  <div class="panel-header"><span class="panel-title">MANOLO FORTICH MAP</span></div>
+ 
+  <div class="map-search-row">
   <div class="map-search-wrap">
     <div class="map-search-box">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -175,6 +234,12 @@ require_once __DIR__ . '/includes/staff-header.php';
       <span class="map-search-clear" id="mapSearchClear">✕</span>
     </div>
     <div class="map-search-results" id="mapSearchResults"></div>
+  </div>
+
+  <div class="family-count" id="familyCount" title="Number of family records (books) on the map">
+    <span class="fc-num" id="familyCountNum">0</span>
+    <span class="fc-label">Family Records<br>on Map<small id="familyCountSub">Search a name</small></span>
+  </div>
   </div>
 
   <div class="map-legend">
@@ -186,7 +251,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div id="staffMap"></div>
 
   <div class="family-panel" id="familyPanel">
-    <div class="fp-title">👪 Family Members</div>
+    <div class="fp-title" id="fpTitle">👪 Family Members</div>
     <div class="family-list" id="familyList"></div>
   </div>
 </div>
@@ -207,9 +272,28 @@ const typeDot = {
   marriage: { fill: '#BFDBFE', stroke: '#2563EB' },
   death:    { fill: '#E5E7EB', stroke: '#6B7280' },
 };
-const bounds = [];
 const barangayCounts = {};
 const markerIndex = []; // { name, marker, record } - used by the search box below
+
+/* Name helpers - the SAME standard as Civil Registry Records and Family Tree
+   (includes/name-format.php): "Given Name Middle Name Surname" in Mixed Case,
+   exactly how the certificate prints it. */
+function ggTitleCase(str) {
+  str = String(str || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return str.replace(/(^|[\s\-.'’(\/])(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+            .replace(/\b(Ii|Iii|Iv)\b/g, m => m.toUpperCase());
+}
+// Any stored name (old "SURNAME, GIVEN MIDDLE" or new) -> "Given Middle Surname"
+function displayName(str) {
+  str = String(str || '').trim();
+  const i = str.indexOf(',');
+  if (i !== -1) str = (str.slice(i + 1).trim() + ' ' + str.slice(0, i).trim()).trim();
+  return ggTitleCase(str);
+}
+function fullNameOf(r) {
+  return ggTitleCase([r.first_name, r.middle_name, r.last_name]
+    .map(v => (v || '').trim()).filter(Boolean).join(' '));
+}
 
 /* ---------- Custom pin marker icon (matches the requested pin+dot design) ---------- */
 function makePinIcon(dotFill, dotStroke, big) {
@@ -236,16 +320,34 @@ records.forEach(r => {
   barangayCounts[bgyKey] = (barangayCounts[bgyKey] || 0) + 1;
   const idx = barangayCounts[bgyKey];
 
-  const angle = idx * 2.399963;
-  const radius = 0.0009 * Math.sqrt(idx);
+  // Scatter multiple people within the same barangay so pins don't stack
+  // exactly on top of each other - but the offset must stay BOUNDED no
+  // matter how many hundreds of people share a barangay, otherwise (as
+  // happened before) it keeps growing outward with every additional
+  // person and can end up placing someone's pin in a totally different
+  // barangay, or even outside Manolo Fortich entirely. So: cycle through
+  // a fixed set of rings up to a hard MAX_RADIUS, reusing ring positions
+  // once we run out, instead of letting the radius grow forever.
+  const RING_CAPACITY = 12;         // points placed per ring before starting a new one
+  const RING_COUNT = 5;             // number of concentric rings before cycling repeats
+  const MAX_RADIUS = 0.0022;        // ~245m - stays safely inside a barangay, never spills into the next one
+  const posInRing = (idx - 1) % RING_CAPACITY;
+  const ringIndex = Math.floor((idx - 1) / RING_CAPACITY) % RING_COUNT;
+  const cycleNumber = Math.floor((idx - 1) / (RING_CAPACITY * RING_COUNT));
+  const angle = (posInRing / RING_CAPACITY) * 2 * Math.PI + ringIndex * 0.35 + cycleNumber * 0.15;
+  const radius = ((ringIndex + 1) / RING_COUNT) * MAX_RADIUS;
   const lat = parseFloat(base[0]) + radius * Math.cos(angle);
   const lng = parseFloat(base[1]) + radius * Math.sin(angle);
 
-  const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ');
+  const fullName = fullNameOf(r);
   const barangayLabel = base[2] || r.barangay;
 
   const dotColors = typeDot[r.registry_type] || typeDot.birth;
-  const marker = L.marker([lat, lng], { icon: makePinIcon(dotColors.fill, dotColors.stroke) }).addTo(map);
+  // NOTE: marker is created here but deliberately NOT added to the map yet
+  // (.addTo(map) happens later, only once this person is found via search).
+  // The map should start blank - everyone gets plotted on demand, not all
+  // at once on page load.
+  const marker = L.marker([lat, lng], { icon: makePinIcon(dotColors.fill, dotColors.stroke) });
 
   const popupHtml = `
     <div class="record-popup">
@@ -254,21 +356,41 @@ records.forEach(r => {
       <div class="rp-row"><span class="rp-label">Registry No.</span><span>${r.registry_number || '\u2014'}</span></div>
       <div class="rp-row"><span class="rp-label">Date</span><span>${r.date_of_event || '\u2014'}</span></div>
       <div class="rp-row"><span class="rp-label">Barangay</span><span>${barangayLabel || '\u2014'}</span></div>
-      ${r.father_name ? `<div class="rp-row"><span class="rp-label">Father</span><span>${r.father_name}</span></div>` : ''}
-      ${r.mother_name ? `<div class="rp-row"><span class="rp-label">Mother</span><span>${r.mother_name}</span></div>` : ''}
+      ${r.zone ? `<div class="rp-row"><span class="rp-label">Zone/Purok</span><span>${r.zone}</span></div>` : ''}
+      ${r.father_name ? `<div class="rp-row"><span class="rp-label">Father</span><span>${displayName(r.father_name)}</span></div>` : ''}
+      ${r.mother_name ? `<div class="rp-row"><span class="rp-label">Mother</span><span>${displayName(r.mother_name)}</span></div>` : ''}
       ${r.account_name
         ? `<div class="rp-row" style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;"><span class="rp-label">Account</span><span>${r.account_name}${Number(r.identity_verified) === 1 ? ' \u2713' : ' (unverified)'}</span></div>`
         : `<div class="rp-row" style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;"><span class="rp-label">Account</span><span style="color:#999;">No linked account</span></div>`}
     </div>
   `;
   marker.bindPopup(popupHtml);
-  bounds.push([lat, lng]);
 
-  markerIndex.push({ name: fullName, marker, lat, lng, barangay: barangayLabel, type: r.registry_type, record: r });
+  // Persistent name label next to the pin (not hidden behind a click) -
+  // shows automatically as soon as this marker is placed on the map
+  // (i.e. right after a search finds this person).
+  marker.bindTooltip(fullName, {
+    permanent: true, direction: 'top', offset: [0, -28],
+    className: 'ft-marker-label',
+  });
+
+  markerIndex.push({ name: fullName, marker, lat, lng, barangay: barangayLabel, zone: r.zone || '', type: r.registry_type, record: r });
 });
 
-if (bounds.length) {
-  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+// ---------- Which markers are currently shown on the map ----------
+// Starts empty (blank map) - markers get added only once a search finds
+// that person, and get cleared again at the start of the next fresh search.
+const shownMarkers = new Set();
+
+function showMarkerPin(entry) {
+  if (shownMarkers.has(entry)) return;
+  entry.marker.addTo(map);
+  shownMarkers.add(entry);
+}
+
+function clearShownMarkers() {
+  shownMarkers.forEach(entry => entry.marker.remove());
+  shownMarkers.clear();
 }
 
 /* ---------- Family finder: parents, children, siblings, spouse,
@@ -276,7 +398,9 @@ if (bounds.length) {
    records (father_name/mother_name/spouse_name are free-text fields, so
    this works by comparing normalized full names). ---------- */
 function normalizeName(s) {
-  return (s || '').toUpperCase().trim().replace(/[^A-Z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  // order- and case-insensitive: "Abao, Xander Sarzosa" == "XANDER SARZOSA ABAO"
+  return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    .replace(/[^A-Z\s]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
 }
 
 // Quick lookup: normalized full name -> markerIndex entry (only for people
@@ -287,9 +411,16 @@ markerIndex.forEach(e => {
   if (key && !nameToEntry[key]) nameToEntry[key] = e;
 });
 
-function fullNameOf(r) {
-  return [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ');
-}
+// Search index built from EVERY civil registry record (not just the ones
+// that made it onto the map). Someone can be searched and found as soon as
+// they're in Civil Registry Records - whether or not their barangay has
+// been filled in with a value that matches a known location yet.
+const searchIndex = [];
+records.forEach(r => {
+  const name = fullNameOf(r);
+  if (!name.trim()) return;
+  searchIndex.push({ name, record: r, entry: nameToEntry[normalizeName(name)] || null });
+});
 
 function findRelatives(person) {
   const selfName = normalizeName(fullNameOf(person));
@@ -305,7 +436,7 @@ function findRelatives(person) {
     const key = norm + '|' + relation;
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ name: name.trim(), relation, entry: nameToEntry[norm] || null });
+    found.push({ name: displayName(name), relation, entry: nameToEntry[norm] || null });
   }
 
   if (person.father_name) addRelative(person.father_name, 'Father');
@@ -374,27 +505,64 @@ function findRelatives(person) {
   addCousinsVia(fatherRecord);
   addCousinsVia(motherRecord);
 
+  // Extended family fallback: everyone else on file who shares this
+  // person's surname (apilyedo). The precise checks above only match
+  // when father_name/mother_name/spouse_name text matches another
+  // record's full name exactly, so relatives entered with a slightly
+  // different spelling, missing suffix, etc. would otherwise be left
+  // out. This catches them and still lets the map plot + label them.
+  const selfLast = normalizeName(person.last_name);
+  if (selfLast) {
+    const namesAlreadyFound = new Set(found.map(f => normalizeName(f.name)));
+    records.forEach(r => {
+      if (r.record_id === person.record_id) return;
+      if (normalizeName(r.last_name) !== selfLast) return;
+      if (namesAlreadyFound.has(normalizeName(fullNameOf(r)))) return; // already shown under a precise relation
+      addRelative(fullNameOf(r), 'Relative (Same Surname)');
+    });
+  }
+
   return found;
 }
 
-function renderFamilyPanel(record) {
+function updateFamilyCount(onMap, totalRelatives, hasSubject) {
+  const box = document.getElementById('familyCount');
+  document.getElementById('familyCountNum').textContent = onMap;
+  box.classList.toggle('active', onMap > 0);
+  const sub = document.getElementById('familyCountSub');
+  if (!hasSubject) sub.textContent = 'Search a name';
+  else if (totalRelatives > onMap) sub.textContent = 'of ' + totalRelatives + ' relatives';
+  else sub.textContent = onMap === 1 ? 'family record' : 'family records';
+}
+
+function renderFamilyPanel(record, subjectUnmapped) {
   const panel = document.getElementById('familyPanel');
   const list = document.getElementById('familyList');
-  if (!record) { panel.classList.remove('show'); return; }
+  if (!record) { panel.classList.remove('show'); updateFamilyCount(0, 0, false); return; }
 
   const relatives = findRelatives(record);
+  const noticeHtml = subjectUnmapped
+    ? `<div class="fp-empty" style="border-bottom:1px solid #eee;margin-bottom:8px;padding-bottom:10px;">
+         📍 <strong>${fullNameOf(record)}</strong> has no barangay/location on file yet, so they can't be
+         pinned on the map themselves. Update their barangay in Civil Registry Records to plot them.
+       </div>`
+    : '';
+
+  // Count each distinct family record that is actually plotted on the map
+  const mappedFamily = new Set(relatives.filter(r => r.entry).map(r => r.entry));
+  updateFamilyCount(mappedFamily.size, relatives.length, true);
 
   if (!relatives.length) {
-    list.innerHTML = '<div class="fp-empty">No family relations on file for this person yet (father/mother/spouse fields are blank, or their relatives aren\'t in the civil registry).</div>';
+    list.innerHTML = noticeHtml || '<div class="fp-empty">No family relations on file for this person yet (father/mother/spouse fields are blank, or their relatives aren\'t in the civil registry).</div>';
     panel.classList.add('show');
     return;
   }
 
-  list.innerHTML = relatives.map((rel, i) => `
+  list.innerHTML = noticeHtml + relatives.map((rel, i) => `
     <div class="family-item ${rel.entry ? '' : 'unmapped'}" data-idx="${i}">
       <div>
         <div class="fi-name">${rel.name}</div>
-        <div class="fi-meta">${rel.entry ? (rel.entry.barangay || 'On the map') : 'Not on file / no map location yet'}</div>
+        <div class="fi-meta">${rel.entry ? [rel.entry.barangay, rel.entry.zone].filter(Boolean).join(' / ') || 'On the map' : 'Not on file / no map location yet'}</div>
       </div>
       <span class="fi-relation">${rel.relation}</span>
     </div>
@@ -410,11 +578,36 @@ function renderFamilyPanel(record) {
   // the whole connected family on the map without clicking each one.
   relatives.forEach(rel => {
     if (!rel.entry) return;
+    showMarkerPin(rel.entry); // place this relative's pin on the map (it starts off it)
     rel.entry.marker.setIcon(makePinIcon(RELATIVE_DOT.fill, RELATIVE_DOT.stroke, true));
     highlightedRelativeEntries.push(rel.entry);
   });
 
   panel.classList.add('show');
+
+  // Even though the searched person themself has no pin, if any of their
+  // relatives DO have one, fly the map to fit all of them so they're not
+  // left staring at an unchanged view.
+  if (subjectUnmapped) {
+    const mappedRelBounds = relatives.filter(r => r.entry).map(r => [r.entry.lat, r.entry.lng]);
+    if (mappedRelBounds.length) {
+      map.flyToBounds(mappedRelBounds, { padding: [60, 60], maxZoom: 15, duration: 0.8 });
+    }
+  }
+}
+
+// Selecting a person who exists in Civil Registry Records but has no
+// barangay match yet (so no pin to fly to) - still surface their family
+// panel and, if possible, fly to any relatives who ARE mapped.
+function selectUnmappedSubject(record) {
+  if (activeMarkerEl) {
+    activeMarkerEl.classList.remove('marker-pulse');
+    activeMarkerEl.classList.remove('marker-family-pulse');
+    activeMarkerEl = null;
+  }
+  clearShownMarkers(); // fresh search - wipe the map back to blank first
+  resetHighlights();
+  renderFamilyPanel(record, true);
 }
 
 let activeMarkerEl = null;
@@ -438,10 +631,13 @@ function highlightMarker(entry, isFamilyClick) {
   }
 
   if (!isFamilyClick) {
-    // A fresh "main" search - clear any relative highlighting from a
-    // previous search before applying new ones.
+    // A fresh "main" search - wipe the map back to blank and clear any
+    // relative highlighting from a previous search before showing the new one.
+    clearShownMarkers();
     resetHighlights();
   }
+
+  showMarkerPin(entry); // actually place this pin on the map (it starts off it)
 
   const dot = isFamilyClick ? RELATIVE_DOT : SUBJECT_DOT;
   entry.marker.setIcon(makePinIcon(dot.fill, dot.stroke, true));
@@ -473,28 +669,40 @@ function highlightMarker(entry, isFamilyClick) {
     if (!query) { results.classList.remove('show'); results.innerHTML = ''; return; }
 
     if (!matches.length) {
-      results.innerHTML = `<div class="map-search-empty">No record found matching "${query}". Sulayi og laing spelling o i-check kung verified na ang tawo.</div>`;
+      results.innerHTML = `<div class="map-search-empty">No record found matching "${query}". Try a different spelling.</div>`;
       results.classList.add('show');
       return;
     }
 
-    results.innerHTML = matches.slice(0, 8).map((entry, i) => `
+    results.innerHTML = matches.slice(0, 8).map((m, i) => `
       <div class="map-search-item" data-idx="${i}">
-        <span class="msi-name">${entry.name}</span>
-        <span class="msi-meta">${entry.barangay || ''} \u00b7 ${entry.type}</span>
+        <span class="msi-name">${m.name}</span>
+        <span class="msi-meta">${m.entry ? (m.entry.barangay || 'On the map') : 'No location on file yet'} \u00b7 ${m.record.registry_type}</span>
       </div>
     `).join('');
     results.classList.add('show');
 
     results.querySelectorAll('.map-search-item').forEach(item => {
       item.addEventListener('click', () => {
-        const entry = matches[Number(item.dataset.idx)];
-        input.value = entry.name;
+        const m = matches[Number(item.dataset.idx)];
+        input.value = m.name;
         results.classList.remove('show');
         clearBtn.style.display = 'block';
-        highlightMarker(entry);
+        if (m.entry) {
+          highlightMarker(m.entry);
+        } else {
+          selectUnmappedSubject(m.record);
+        }
       });
     });
+  }
+
+  // Search in ANY order and ANY case, partial words allowed:
+  // "abao xan", "Xander Sarzosa Abao", "ABAO, XANDER" all find "Xander Sarzosa Abao".
+  function nameMatches(name, q) {
+    const hay = normalizeName(name);
+    const toks = normalizeName(q).split(' ').filter(Boolean);
+    return toks.length > 0 && toks.every(t => hay.includes(t));
   }
 
   input.addEventListener('input', () => {
@@ -502,7 +710,7 @@ function highlightMarker(entry, isFamilyClick) {
     clearBtn.style.display = input.value ? 'block' : 'none';
     if (!query) { renderResults([], ''); return; }
 
-    const matches = markerIndex.filter(e => normalize(e.name).includes(query));
+    const matches = searchIndex.filter(m => nameMatches(m.name, input.value));
     renderResults(matches, input.value.trim());
   });
 
@@ -512,12 +720,16 @@ function highlightMarker(entry, isFamilyClick) {
     const query = normalize(input.value);
     if (!query) return;
 
-    const exact = markerIndex.find(m => normalize(m.name) === query);
-    const match = exact || markerIndex.find(m => normalize(m.name).includes(query));
+    const exact = searchIndex.find(m => normalizeName(m.name) === normalizeName(input.value));
+    const match = exact || searchIndex.find(m => nameMatches(m.name, input.value));
 
     if (match) {
       results.classList.remove('show');
-      highlightMarker(match);
+      if (match.entry) {
+        highlightMarker(match.entry);
+      } else {
+        selectUnmappedSubject(match.record);
+      }
     } else {
       renderResults([], input.value.trim());
     }
@@ -528,6 +740,18 @@ function highlightMarker(entry, isFamilyClick) {
     clearBtn.style.display = 'none';
     results.classList.remove('show');
     input.focus();
+
+    // Back to a blank map - no one plotted until the next search.
+    if (activeMarkerEl) {
+      activeMarkerEl.classList.remove('marker-pulse');
+      activeMarkerEl.classList.remove('marker-family-pulse');
+      activeMarkerEl = null;
+    }
+    clearShownMarkers();
+    resetHighlights();
+    document.getElementById('familyPanel').classList.remove('show');
+    updateFamilyCount(0, 0, false);
+    map.setView([8.3675, 124.8656], 12);
   });
 
   document.addEventListener('click', (e) => {

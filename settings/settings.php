@@ -3,9 +3,14 @@ require_once __DIR__ . '/../includes/auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
 
 $userId = $_SESSION['user_id'];
-$stmt = $pdo->prepare("SELECT full_name, identity_verified FROM users WHERE user_id = ?");
+$stmt = $pdo->prepare("SELECT full_name, identity_verified, profile_photo FROM users WHERE user_id = ?");
 $stmt->execute([$userId]);
 $user = $stmt->fetch();
+
+$stmtS = $pdo->prepare("SELECT dark_mode FROM user_settings WHERE user_id = ?");
+$stmtS->execute([$userId]);
+$isDark = (bool) $stmtS->fetchColumn();
+
 $activeNav = 'profile';
 ?>
 <!DOCTYPE html>
@@ -14,7 +19,7 @@ $activeNav = 'profile';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Settings</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 <style>
   .content-scroll{padding-bottom:80px;}
   .settings-avatar-wrap{text-align:center;margin:10px 0 26px;}
@@ -24,7 +29,9 @@ $activeNav = 'profile';
     display:flex;align-items:center;justify-content:center;
     font-size:26px;font-weight:700;margin:0 auto 10px;
     border:3px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,0.1);
+    overflow:hidden;
   }
+  .settings-avatar img{width:100%;height:100%;object-fit:cover;}
   .settings-name{font-weight:700;font-size:15.5px;}
   .badge-verified{
     display:inline-flex;align-items:center;gap:5px;margin-top:6px;
@@ -63,12 +70,24 @@ $activeNav = 'profile';
     </div>
 
     <div class="settings-avatar-wrap">
-      <div class="settings-avatar"><?= strtoupper(substr($user['full_name'], 0, 1)) ?></div>
+      <div class="settings-avatar">
+        <?php if (!empty($user['profile_photo'])): ?>
+          <img src="../<?= htmlspecialchars($user['profile_photo']) ?>" alt="Profile photo">
+        <?php else: ?>
+          <?= strtoupper(substr($user['full_name'], 0, 1)) ?>
+        <?php endif; ?>
+      </div>
       <div class="settings-name"><?= htmlspecialchars($user['full_name']) ?></div>
       <?php if ($user['identity_verified']): ?>
         <span class="badge-verified">✔ Verified User</span>
       <?php endif; ?>
     </div>
+
+    <a href="../profile/edit-profile.php" class="settings-item">
+      <div class="si-icon">👤</div>
+      <div class="si-label">Edit Profile</div>
+      <span class="si-chevron">›</span>
+    </a>
 
     <a href="change-password.php" class="settings-item">
       <div class="si-icon">🔒</div>

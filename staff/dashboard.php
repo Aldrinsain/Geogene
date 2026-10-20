@@ -8,14 +8,26 @@ $pendingVerification = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE ident
 $totalReports = (int) $pdo->query("SHOW TABLES LIKE 'staff_reports'")->rowCount() ? (int) $pdo->query("SELECT COUNT(*) FROM staff_reports")->fetchColumn() : 0;
 
 $recentUsers = $pdo->query("SELECT full_name, email, status, last_seen, created_at FROM users WHERE role = 'user' ORDER BY created_at DESC LIMIT 5")->fetchAll();
-$recentRatings = (int) $pdo->query("SHOW TABLES LIKE 'system_ratings'")->rowCount()
-    ? $pdo->query("
-        SELECT sr.stars, sr.feedback, sr.created_at, u.full_name, u.last_seen
-        FROM system_ratings sr JOIN users u ON u.user_id = sr.user_id
-        WHERE u.role = 'user'
-        ORDER BY sr.created_at DESC LIMIT 5
-      ")->fetchAll()
-    : [];
+
+// Last 6 months of new user registrations, month-by-month (for the trend chart)
+$monthlyRegs = [];
+for ($i = 5; $i >= 0; $i--) {
+    $ym = date('Y-m', strtotime("-$i months"));
+    $monthlyRegs[$ym] = ['label' => date('M', strtotime("-$i months")), 'count' => 0];
+}
+$regRows = $pdo->query("
+    SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, COUNT(*) AS cnt
+    FROM users
+    WHERE role = 'user' AND created_at >= DATE_SUB(CURDATE(), INTERVAL 5 MONTH)
+    GROUP BY ym
+")->fetchAll();
+foreach ($regRows as $row) {
+    if (isset($monthlyRegs[$row['ym']])) {
+        $monthlyRegs[$row['ym']]['count'] = (int) $row['cnt'];
+    }
+}
+$regLabels = array_column($monthlyRegs, 'label');
+$regCounts = array_column($monthlyRegs, 'count');
 
 // A user counts as "online" if we've seen a request from them in the last
 // 5 minutes (last_seen is bumped by the auth-guard heartbeat on every page).
@@ -56,9 +68,20 @@ require_once __DIR__ . '/includes/staff-header.php';
     <div class="stat-icon img-box"><img src="../assets/images/pending-icon.gif" alt="Pending" width="22" height="22"></div>
     <div><div class="stat-num"><?= number_format($pendingVerification) ?></div><div class="stat-label">Pending Verification</div></div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon img-box"><img src="../assets/images/wired-flat-237-star-morph-select.gif" alt="Star" width="22" height="22"></div>
-    <div><div class="stat-num"><?= number_format($totalReports) ?></div><div class="stat-label">Ratings</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:20px;">
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">New User Registrations</span></div>
+    <div style="position:relative;height:260px;">
+      <canvas id="regChart"></canvas>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Verified vs Pending</span></div>
+    <div style="position:relative;height:260px;display:flex;align-items:center;justify-content:center;">
+      <canvas id="verifyChart"></canvas>
+    </div>
   </div>
 </div>
 
@@ -84,49 +107,99 @@ require_once __DIR__ . '/includes/staff-header.php';
       <div class="qt-label">Verify User</div>
     </a>
 
-    <a href="reports.php?action=generate" class="quick-tile">
-      <div class="qt-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="#1a1a1a">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
-        </svg>
-      </div>
-      <div class="qt-label">Rating</div>
-    </a>
-
     <a href="map.php" class="quick-tile"><div class="qt-icon">🗺</div><div class="qt-label">View Map</div></a>
   </div>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">Recently Registered Users</span></div>
-    <?php if (!$recentUsers): ?>
-      <p style="font-size:12.5px;color:var(--text-muted);">No newly registered users yet.</p>
-    <?php else: foreach ($recentUsers as $u): ?>
-      <div class="activity-item">
-        <span class="activity-dot <?= is_online($u['last_seen']) ? 'green' : 'silver' ?>" title="<?= is_online($u['last_seen']) ? 'Online' : 'Offline' ?>"></span>
-        <div>
-          <div class="activity-text"><strong><?= htmlspecialchars($u['full_name']) ?></strong> registered an account</div>
-          <div class="activity-time"><?= date('M d, Y g:i A', strtotime($u['created_at'])) ?></div>
-        </div>
+<div class="panel">
+  <div class="panel-header"><span class="panel-title">Recently Registered Users</span></div>
+  <?php if (!$recentUsers): ?>
+    <p style="font-size:12.5px;color:var(--text-muted);">No newly registered users yet.</p>
+  <?php else: foreach ($recentUsers as $u): ?>
+    <div class="activity-item">
+      <span class="activity-dot <?= is_online($u['last_seen']) ? 'green' : 'silver' ?>" title="<?= is_online($u['last_seen']) ? 'Online' : 'Offline' ?>"></span>
+      <div>
+        <div class="activity-text"><strong><?= htmlspecialchars($u['full_name']) ?></strong> registered an account</div>
+        <div class="activity-time"><?= date('M d, Y g:i A', strtotime($u['created_at'])) ?></div>
       </div>
-    <?php endforeach; endif; ?>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">Recent User Ratings</span></div>
-    <?php if (!$recentRatings): ?>
-      <p style="font-size:12.5px;color:var(--text-muted);">No ratings submitted yet.</p>
-    <?php else: foreach ($recentRatings as $r): ?>
-      <div class="activity-item">
-        <span class="activity-dot <?= is_online($r['last_seen']) ? 'green' : 'silver' ?>" title="<?= is_online($r['last_seen']) ? 'Online' : 'Offline' ?>"></span>
-        <div>
-          <div class="activity-text"><strong><?= htmlspecialchars($r['full_name']) ?></strong> rated GeoGene <?= str_repeat('★', (int) $r['stars']) . str_repeat('☆', 5 - (int) $r['stars']) ?></div>
-          <div class="activity-time"><?= date('M d, Y g:i A', strtotime($r['created_at'])) ?></div>
-        </div>
-      </div>
-    <?php endforeach; endif; ?>
-  </div>
+    </div>
+  <?php endforeach; endif; ?>
 </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+(function () {
+  var regLabels = <?= json_encode($regLabels) ?>;
+  var regCounts = <?= json_encode($regCounts) ?>;
+  var verifiedCount = <?= (int) $verifiedUsers ?>;
+  var pendingCount = <?= (int) $pendingVerification ?>;
+
+  function cssVar(name) {
+    return getComputedStyle(document.body).getPropertyValue(name).trim();
+  }
+
+  var regChart, verifyChart;
+
+  function buildCharts() {
+    var textColor = cssVar('--text-secondary') || '#6b6b6b';
+    var gridColor = cssVar('--border') || '#e5e7eb';
+    var primary = cssVar('--primary') || '#1b6e3c';
+
+    if (regChart) regChart.destroy();
+    if (verifyChart) verifyChart.destroy();
+
+    regChart = new Chart(document.getElementById('regChart'), {
+      type: 'line',
+      data: {
+        labels: regLabels,
+        datasets: [{
+          label: 'New users',
+          data: regCounts,
+          borderColor: primary,
+          backgroundColor: primary + '26',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: primary
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 11 } } },
+          y: { beginAtZero: true, ticks: { precision: 0, color: textColor, font: { size: 11 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+
+    verifyChart = new Chart(document.getElementById('verifyChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Verified', 'Pending'],
+        datasets: [{
+          data: [verifiedCount, pendingCount],
+          backgroundColor: [primary, gridColor],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '68%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: textColor, font: { size: 12 }, boxWidth: 10, padding: 14 } }
+        }
+      }
+    });
+  }
+
+  buildCharts();
+
+  // Redraw with fresh colors whenever the light/dark toggle flips body.dark-mode
+  new MutationObserver(buildCharts).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+})();
+</script>
 
 <?php require_once __DIR__ . '/includes/staff-footer.php'; ?>

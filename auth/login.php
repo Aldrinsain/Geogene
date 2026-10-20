@@ -1,10 +1,17 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/account-status.php';
 
 $error = '';
 if (isset($_GET['expired'])) {
     $error = 'Your session has expired. Please log in again.';
+}
+if (isset($_GET['disabled'])) {
+    $error = GEOGENE_DISABLED_MESSAGE;
+}
+if (isset($_GET['error'])) {
+    $error = $_GET['error'];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -12,14 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
 
     if ($email === '' || $password === '') {
-        $error = 'Palihug i-type ang email ug password.';
+        $error = 'Please enter your email and password.';
     } else {
         $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND role = 'user'");
         $stmt->execute([$email]);
         $user = $stmt->fetch();
 
         if (!$user || !password_verify($password, $user['password_hash'])) {
-            $error = 'Sayop ang email o password.';
+            $error = 'Incorrect email or password.';
+        } elseif (geogene_account_is_disabled($user['status'])) {
+            $error = GEOGENE_DISABLED_MESSAGE;
         } elseif (!$user['email_verified']) {
             $_SESSION['pending_user_id'] = $user['user_id'];
             $_SESSION['pending_email'] = $user['email'];
@@ -49,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Login</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 <style>
   .title {
     text-align: center;
@@ -128,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </form>
 
   <div class="divider">OR</div>
-  <button type="button" class="btn-google" onclick="alert('Google login placeholder - i-configure kung gusto gamiton.')">
+  <button type="button" class="btn-google" onclick="window.location.href='google-login.php'">
     <span class="google-icon">
     <svg width="20" height="20" viewBox="0 0 24 24">
       <path fill="#4285F4"

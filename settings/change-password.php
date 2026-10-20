@@ -16,15 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $hash = $stmt->fetchColumn();
 
     if (!password_verify($current, $hash)) {
-        $error = 'Sayop ang current password.';
+        $error = 'Incorrect current password.';
     } elseif (strlen($new) < 8) {
-        $error = 'Ang bag-o nga password dapat at least 8 characters.';
+        $error = 'The new password must be at least 8 characters.';
     } elseif ($new !== $confirm) {
-        $error = 'Dili magtugma ang bag-o nga password ug confirm password.';
+        $error = 'The new password and confirm password do not match.';
     } else {
         $newHash = password_hash($new, PASSWORD_BCRYPT);
         $pdo->prepare("UPDATE users SET password_hash = ? WHERE user_id = ?")->execute([$newHash, $userId]);
-        $success = 'Na-update na ang imong password.';
+        $success = 'Your password has been updated.';
     }
 }
 ?>
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Change Password</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 </head>
 <body class="<?= $isDark ? 'dark-bg' : 'light-bg' ?>">
 

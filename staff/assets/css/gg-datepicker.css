@@ -1,0 +1,139 @@
+/* gg-datepicker.css - GeoGene calendar date picker (uses the staff theme variables) */
+
+/* ---- the typed field + calendar icon button ---- */
+.date-mask-wrap{position:relative;}
+.date-mask-wrap input.dateMaskDisplay{padding-right:46px;cursor:text;}
+.date-mask-wrap input.dateMaskDisplay.gg-invalid{border-color:#d93025;box-shadow:0 0 0 3px rgba(217,48,37,.12);}
+.gg-dp-icon{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  border:none;border-radius:8px;background:transparent;color:var(--primary,#1b6e3c);
+  cursor:pointer;padding:0;transition:background .15s ease,color .15s ease;
+}
+.gg-dp-icon:hover,.gg-dp-icon:focus-visible{background:var(--primary-light,#e4f5e9);outline:none;}
+.gg-dp-icon:active{background:var(--primary,#1b6e3c);color:#fff;}
+.gg-dp-msg{margin:-8px 0 12px;font-size:11.5px;font-weight:600;color:#d93025;}
+.gg-dp-msg[hidden]{display:none;}
+
+/* ---- dialog (Material-style date picker) ----
+   Colours come from these variables. Default = GeoGene green.
+   For the purple Chrome/Material look, replace the 5 values below with:
+     --gg-primary:#65558f; --gg-surface:#ece6f0; --gg-hover:rgba(101,85,143,.10);
+     --gg-focus:rgba(101,85,143,.18); --gg-chip:#e8def8;                              */
+.gg-dp{
+  --gg-primary:var(--primary,#1b6e3c);
+  --gg-on-primary:#ffffff;
+  --gg-surface:#eaf3ec;
+  --gg-hover:rgba(27,110,60,.09);
+  --gg-focus:rgba(27,110,60,.18);
+  --gg-chip:#d3e8d9;
+  --gg-ink:#1b2620;
+  --gg-ink-soft:#4a5a50;
+  --gg-line:#c4d0c8;
+
+  position:fixed;top:0;left:0;z-index:2000;   /* JS sets left/top - see position() */
+  width:328px;max-width:calc(100vw - 16px);box-sizing:border-box;
+  max-height:calc(100vh - 16px);overflow-x:hidden;overflow-y:auto;
+  background:var(--gg-surface);color:var(--gg-ink);
+  border-radius:28px;padding:0;
+  box-shadow:0 8px 28px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.10);
+  font-family:inherit;outline:none;
+  animation:ggDpIn .15s ease-out;
+}
+body.dark-mode .gg-dp{
+  --gg-surface:#1f2b24;--gg-ink:#e8f0ea;--gg-ink-soft:#a9b8ae;--gg-line:#34443a;
+  --gg-primary:#5fbf85;--gg-on-primary:#0c2016;--gg-hover:rgba(95,191,133,.14);
+  --gg-focus:rgba(95,191,133,.24);--gg-chip:#2c4536;
+}
+@keyframes ggDpIn{from{opacity:0;transform:translateY(-4px) scale(.98);}to{opacity:1;transform:none;}}
+
+/* header: "Select date" + big chosen date + pencil */
+.gg-dp-header{padding:14px 12px 8px 22px;}
+.gg-dp-eyebrow{font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--gg-ink-soft);}
+.gg-dp-headrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:18px;}
+.gg-dp-headline{font-size:28px;line-height:36px;font-weight:400;color:var(--gg-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gg-dp-headline.gg-empty{color:var(--gg-ink-soft);font-size:26px;}
+.gg-dp-divider{height:1px;background:var(--gg-line);margin:0;}
+
+.gg-dp-iconbtn{
+  width:40px;height:40px;flex:0 0 40px;display:flex;align-items:center;justify-content:center;
+  border:none;border-radius:50%;background:transparent;color:var(--gg-ink-soft);cursor:pointer;padding:0;
+  transition:background .15s ease;
+}
+.gg-dp-iconbtn:hover:not(:disabled){background:var(--gg-hover);}
+.gg-dp-iconbtn:focus-visible{outline:2px solid var(--gg-primary);outline-offset:-2px;}
+.gg-dp-iconbtn:disabled{opacity:.35;cursor:not-allowed;}
+
+/* body */
+.gg-dp-body{padding:4px 12px 0;box-sizing:border-box;}
+.gg-dp-body.gg-typing{min-height:0;padding:20px 24px 8px;}
+.gg-dp-nav{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 0 0 12px;}
+.gg-dp-ym{
+  display:inline-flex;align-items:center;gap:6px;border:none;background:transparent;cursor:pointer;
+  font-family:inherit;font-size:14px;font-weight:600;color:var(--gg-ink-soft);padding:8px 8px 8px 4px;border-radius:20px;
+  transition:background .15s ease;
+}
+.gg-dp-ym:hover{background:var(--gg-hover);}
+.gg-dp-ym:focus-visible{outline:2px solid var(--gg-primary);outline-offset:1px;}
+.gg-dp-arrows{display:flex;gap:0;}
+
+.gg-dp-week,.gg-dp-grid{display:grid;grid-template-columns:repeat(7,40px);justify-content:center;}
+.gg-dp-grid{grid-auto-rows:36px;}
+.gg-dp-week span{height:32px;line-height:32px;text-align:center;font-size:12px;font-weight:500;color:var(--gg-ink);}
+.gg-dp-day{
+  width:34px;height:34px;border:1px solid transparent;border-radius:50%;background:transparent;margin:1px auto;
+  color:var(--gg-ink);font-size:13.5px;font-weight:400;font-family:inherit;cursor:pointer;padding:0;
+  transition:background .12s ease,color .12s ease;
+}
+.gg-dp-day:hover:not(:disabled):not(.gg-sel){background:var(--gg-hover);}
+.gg-dp-day:focus-visible{outline:2px solid var(--gg-primary);outline-offset:-2px;}
+.gg-dp-day.gg-out{visibility:hidden;cursor:default;}
+.gg-dp-day.gg-today:not(.gg-sel){border-color:var(--gg-primary);color:var(--gg-primary);font-weight:600;}
+.gg-dp-day.gg-sel,.gg-dp-day.gg-sel:hover{background:var(--gg-primary);color:var(--gg-on-primary);border-color:var(--gg-primary);font-weight:600;}
+.gg-dp-day:disabled:not(.gg-out){opacity:.32;cursor:not-allowed;}
+
+/* year / month chooser */
+.gg-dp-years,.gg-dp-months{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 6px;padding:4px 4px 8px;}
+.gg-dp-years{position:relative;height:216px;overflow-y:auto;align-content:start;}
+.gg-dp-months{align-content:start;height:216px;}
+.gg-dp-chip{
+  height:36px;border:1px solid transparent;border-radius:18px;background:transparent;cursor:pointer;
+  font-family:inherit;font-size:14px;color:var(--gg-ink);transition:background .12s ease;
+}
+.gg-dp-chip:hover:not(:disabled):not(.gg-sel){background:var(--gg-hover);}
+.gg-dp-chip:focus-visible{outline:2px solid var(--gg-primary);outline-offset:-2px;}
+.gg-dp-chip.gg-today:not(.gg-sel){border-color:var(--gg-primary);color:var(--gg-primary);}
+.gg-dp-chip.gg-sel{background:var(--gg-primary);color:var(--gg-on-primary);font-weight:600;}
+.gg-dp-chip:disabled{opacity:.3;cursor:not-allowed;}
+
+/* type-in mode */
+.gg-dp .gg-dp-field{display:block;position:relative;margin:0;font-weight:400;}
+.gg-dp-field span{
+  position:absolute;left:12px;top:-8px;padding:0 4px;font-size:12px;line-height:16px;font-weight:400;
+  color:var(--gg-primary);background:var(--gg-surface);
+}
+body .gg-dp .gg-dp-field input.gg-dp-textinput{
+  width:100%;box-sizing:border-box;height:56px;padding:0 16px;font-size:16px;font-family:inherit;font-weight:400;
+  color:var(--gg-ink);background:transparent;border:2px solid var(--gg-primary);border-radius:6px;outline:none;
+}
+body .gg-dp .gg-dp-field input.gg-dp-textinput.gg-invalid,body .gg-dp .gg-dp-field input.gg-dp-textinput.gg-invalid:focus{border-color:#d93025;}
+.gg-dp-inputmsg{margin:6px 16px 0;font-size:12px;color:var(--gg-ink-soft);min-height:16px;}
+.gg-dp-inputmsg.gg-err{color:#d93025;font-weight:600;}
+
+/* actions: Clear ........ Cancel  OK */
+.gg-dp-actions{display:flex;align-items:center;gap:0;padding:4px 12px 10px;}
+.gg-dp-spacer{flex:1;}
+.gg-dp-btn{
+  border:none;background:transparent;color:var(--gg-primary);cursor:pointer;
+  font-family:inherit;font-size:14px;font-weight:600;padding:10px 12px;border-radius:20px;
+  transition:background .15s ease;
+}
+.gg-dp-btn:hover:not(:disabled){background:var(--gg-hover);}
+.gg-dp-btn:focus-visible{outline:2px solid var(--gg-primary);outline-offset:-2px;}
+
+@media (max-width:480px){
+  .gg-dp{width:min(328px,calc(100vw - 16px));}
+  .gg-dp-week,.gg-dp-grid{grid-template-columns:repeat(7,minmax(0,1fr));}
+  .gg-dp-day{width:100%;max-width:34px;margin:1px auto;}
+}
+@media (prefers-reduced-motion:reduce){.gg-dp{animation:none;}}

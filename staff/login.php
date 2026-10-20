@@ -51,12 +51,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   html,body{height:100%;}
   body{
     min-height:100vh;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    background:#095096;
-    background:linear-gradient(207deg, rgba(9, 80, 150, 1) 0%, rgba(6, 125, 56, 1) 50%, rgba(227, 187, 30, 1) 100%);
+    position:relative;
+    overflow:hidden;
     padding:20px;
-  }
+}
+body::before{
+    content:'';
+    position:fixed;
+    inset:0;
+    background:url('../assets/images/municipal.png') center center/cover no-repeat;
+    filter:blur(10px);
+    transform:scale(1.1);
+    z-index:-2;
+}
+
+body::after{
+    content:'';
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.30);
+    z-index:-1;
+}
 
   .brand{
     text-align:center;

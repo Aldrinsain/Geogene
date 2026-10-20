@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Privacy Policy</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 <style>.content-scroll{padding-bottom:30px;font-size:13px;line-height:1.7;color:var(--text-secondary);}</style>
 </head>
 <body class="<?= $isDark ? 'dark-bg' : 'light-bg' ?>">

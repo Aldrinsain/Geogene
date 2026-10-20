@@ -1,26 +1,28 @@
 <?php
-// GeoGene - Google Sign-In (OAuth) configuration
-//
-// To make "Sign in with Google" actually work, you need a free Google
-// Cloud OAuth 2.0 Client ID:
-//
-// 1. Go to https://console.cloud.google.com/apis/credentials
-// 2. Click "Create Credentials" > "OAuth client ID"
-// 3. Application type: "Web application"
-// 4. Under "Authorized JavaScript origins", add the URL you access GeoGene
-//    from, e.g. http://localhost or http://localhost/geogene (no trailing
-//    slash, no path) - for a live server, add that domain too
-//    (e.g. https://geogene.gov.ph)
-// 5. Click Create, then copy the "Client ID" value (ends in
-//    ".apps.googleusercontent.com") and paste it below.
-//
-// Only Google accounts whose email already exists in the `users` table
-// with role 'office_head' or 'admin' will be allowed to sign in this way -
-// signing in with Google does NOT create new staff accounts by itself.
+// GeoGene - Google OAuth Configuration
+// Kini nga file gigamit sa DUHA ka Google login: ang USER login
+// (auth/google-login.php - full redirect flow) ug ang unified STAFF/ADMIN
+// login (login.php, which calls staff/google-login.php - Google Identity
+// Services token flow).
 
-define('GOOGLE_CLIENT_ID', '106940233442-cfbbmubvg7jcakhc028rh0gdrtj5lkoa.apps.googleusercontent.com');
+// ---------- Client ID/Secret ----------
+// Gikan sa Google Cloud Console > APIs & Services > Credentials
+// (Client: "User login")
+// Ang GOOGLE_CLIENT_SECRET naa na sa config/secrets.php (dili i-commit sa Git).
+if (is_file(__DIR__ . '/secrets.php')) require_once __DIR__ . '/secrets.php';
+if (!defined('GOOGLE_CLIENT_SECRET')) define('GOOGLE_CLIENT_SECRET', '');
 
-// Optional: restrict Google Sign-In to accounts from your own email
-// domain (recommended). Leave as '' to allow any Google account whose
-// email matches an existing staff record regardless of domain.
-define('GOOGLE_ALLOWED_DOMAIN', 'staff@geogene.gov.ph');
+// ---------- Optional domain restriction (para sa STAFF login lang) ----------
+// Kung gusto limitahan ang staff Google Sign-In sa usa lang ka email domain
+// (e.g. 'geogene.gov.ph'), ibutang dinhi. Blangko ('') = walay restriction,
+// bisan unsa nga Google account nga naa na sa users table (office_head/admin)
+// pwede mo-login.
+define('GOOGLE_ALLOWED_DOMAIN', '');
+
+// ---------- Redirect URI (para sa USER login flow lang) ----------
+// Kinahanglan MOTUGMA gyud ni sa "Authorized redirect URI" nga gi-set sa
+// Google Cloud Console para sa "User login" client.
+// Auto-detect base sa current host aron mo-work bisan localhost, IP, o ngrok URL.
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+define('GOOGLE_REDIRECT_URI', $protocol . '://' . $host . '/geogene/auth/google-callback.php');

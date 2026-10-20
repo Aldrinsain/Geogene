@@ -42,11 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $step === 'parse') {
             INSERT INTO civil_registry_records (registry_type, registry_number, book_no, page_no,
             city_municipality, date_prepared, full_name, first_name, middle_name,
             last_name, suffix, sex, date_of_event, place_of_event, father_name, mother_name, spouse_name,
-            barangay, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            barangay, zone, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
         $imported = 0;
         $skipped = 0;
+        $skippedDetails = [];
         foreach ($result['valid'] as $item) {
             $r = $item['record'];
             try {
@@ -55,16 +56,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $step === 'parse') {
                     $r['city_municipality'] ?? null, $r['date_prepared'] ?? null, $r['full_name'] ?? null,
                     $r['first_name'], $r['middle_name'],
                     $r['last_name'], $r['suffix'], $r['sex'], $r['date_of_event'], $r['place_of_event'],
-                    $r['father_name'], $r['mother_name'], $r['spouse_name'], $r['barangay'], $r['remarks'],
+                    $r['father_name'], $r['mother_name'], $r['spouse_name'], gg_canonical_barangay($pdo, $r['barangay']), $r['zone'] ?? null, $r['remarks'],
                 ]);
                 $imported++;
             } catch (PDOException $e) {
-                // Most likely a duplicate registry_number (UNIQUE constraint) - skip and keep going.
+                // Most likely a duplicate registry_number (UNIQUE constraint) - skip and keep going,
+                // but remember exactly which row + registry number so the staff can see why afterward
+                // instead of just a mystery count of "skipped" rows.
                 $skipped++;
+                $skippedDetails[] = [
+                    'row' => $item['row'],
+                    'name' => $r['full_name'] ?: trim($r['first_name'] . ' ' . $r['last_name']),
+                    'registry_number' => $r['registry_number'] ?: '(blank)',
+                ];
             }
         }
 
         unset($_SESSION['import_preview']);
+        if ($skippedDetails) {
+            $_SESSION['import_skipped_details'] = $skippedDetails;
+        }
         header('Location: civil-registry.php?imported=' . $imported . '&skipped=' . $skipped);
         exit;
     }
@@ -186,7 +197,7 @@ require_once __DIR__ . '/includes/staff-header.php';
       present (e.g. "Name of Child" = Birth). Extra columns in your file are ignored.
     </p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      <?php foreach (['Barangay', 'City/Municipality', 'Book No.', 'Page No.', 'Registry No.', 'Date Prepared'] as $col): ?>
+      <?php foreach (['Barangay', 'Zone', 'City/Municipality', 'Book No.', 'Page No.', 'Registry No.', 'Date Prepared'] as $col): ?>
         <span class="badge gray"><?= htmlspecialchars($col) ?></span>
       <?php endforeach; ?>
     </div>
@@ -250,6 +261,46 @@ require_once __DIR__ . '/includes/staff-header.php';
       <?php endif; ?>
     <?php endif; ?>
 
+    <?php
+      // ---------- Detected Columns ----------
+      // Shows exactly which column in the uploaded file each recognized
+      // field was read from, so a mis-detected or missing column (e.g. a
+      // typo'd header, or a "Barangay" column that didn't get picked up)
+      // is obvious right away instead of only showing up later as a
+      // silent blank field on every row.
+      $colMap = $preview['colMap'] ?? [];
+      $fieldLabels = [
+          'barangay' => 'Barangay', 'zone' => 'Zone/Purok/Sitio', 'city_municipality' => 'City/Municipality',
+          'book_no' => 'Book No.', 'page_no' => 'Page No.', 'registry_number' => 'Registry No.',
+          'date_prepared' => 'Date Prepared', 'date_of_event' => 'Date of Birth/Marriage/Death',
+          'name_of_child' => 'Name of Child', 'name_of_wife' => 'Name of Wife',
+          'name_of_husband' => 'Name of Husband', 'name_of_deceased' => 'Name of Deceased',
+          'full_name' => 'Full Name', 'first_name' => 'First Name', 'last_name' => 'Last Name',
+          'mother_name' => 'Name of Mother', 'father_name' => 'Name of Father',
+      ];
+    ?>
+    <details style="margin:14px 0 18px;">
+      <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--text-secondary);">
+        Detected Columns (click to check if something looks off, like a missing Barangay)
+      </summary>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+        <?php foreach ($fieldLabels as $field => $label):
+          $found = isset($colMap[$field]);
+        ?>
+          <span class="badge <?= $found ? 'green' : 'gray' ?>" title="<?= $found ? ('Column ' . import_col_index_to_letter($colMap[$field])) : 'Not found in your file' ?>">
+            <?= $found ? '✓' : '—' ?> <?= htmlspecialchars($label) ?><?= $found ? ' (Col ' . import_col_index_to_letter($colMap[$field]) . ')' : '' ?>
+          </span>
+        <?php endforeach; ?>
+      </div>
+      <?php if (!isset($colMap['barangay'])): ?>
+        <p style="font-size:12px;color:var(--danger);margin-top:10px;">
+          ⚠ No "Barangay" column was detected in this file - every imported record below will have a blank
+          Barangay (won't show up on the Geographic Map). Check that your file has a column headed exactly
+          "Barangay" (or "Brgy") in its first row, then re-upload.
+        </p>
+      <?php endif; ?>
+    </details>
+
     <span class="panel-title">Records to Import (<?= count($preview['valid']) ?>)</span>
 
     <?php
@@ -282,7 +333,7 @@ require_once __DIR__ . '/includes/staff-header.php';
 
     <table class="data-table">
       <thead>
-        <tr><th>Registry No.</th><th>Full Name</th><th>Type</th><th>Barangay</th><th>Date of Event</th></tr>
+        <tr><th>Registry No.</th><th>Full Name</th><th>Type</th><th>Barangay / Zone</th><th>Date of Event</th></tr>
       </thead>
       <tbody id="previewRows">
         <?php if (!$preview['valid']): ?>
@@ -292,7 +343,7 @@ require_once __DIR__ . '/includes/staff-header.php';
             <td><?= htmlspecialchars($r['registry_number'] ?: '—') ?></td>
             <td><?= htmlspecialchars($r['full_name'] ?: trim($r['first_name'] . ' ' . $r['middle_name'] . ' ' . $r['last_name'])) ?></td>
             <td><span class="badge type-badge <?= $r['registry_type'] === 'birth' ? 'green' : ($r['registry_type'] === 'marriage' ? 'blue' : 'gray') ?>"><?= ucfirst($r['registry_type']) ?></span></td>
-            <td><?= htmlspecialchars($r['barangay'] ?: '—') ?></td>
+            <td><?= htmlspecialchars($r['barangay'] ?: '—') ?><?= $r['zone'] ? ' / ' . htmlspecialchars($r['zone']) : '' ?></td>
             <td><?= $r['date_of_event'] ? date('M d, Y', strtotime($r['date_of_event'])) : '—' ?></td>
           </tr>
         <?php endforeach; endif; ?>

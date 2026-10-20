@@ -1,0 +1,9 @@
+# Private keys / passwords - NEVER commit
+config/secrets.php
+.env
+.env.*
+
+# Python / editor junk
+__pycache__/
+*.pyc
+.DS_Store

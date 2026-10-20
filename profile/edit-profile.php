@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../staff/includes/name-format.php';   // shared name rules (Given Middle Surname, Mixed Case)
 
 $userId = $_SESSION['user_id'];
 $error = '';
@@ -15,10 +16,14 @@ $stmt = $pdo->prepare("
 $stmt->execute([$userId]);
 $user = $stmt->fetch();
 
+$stmtS = $pdo->prepare("SELECT dark_mode FROM user_settings WHERE user_id = ?");
+$stmtS->execute([$userId]);
+$isDark = (bool) $stmtS->fetchColumn();
+
 $barangays = $pdo->query("SELECT name FROM barangays ORDER BY name")->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fullName    = trim($_POST['full_name'] ?? '');
+    $fullName    = gg_display_name(trim($_POST['full_name'] ?? ''));   // "Given Middle Surname", Mixed Case
     $email       = trim($_POST['email'] ?? '');
     $phone       = trim($_POST['phone_number'] ?? '');
     $dateOfBirth = trim($_POST['date_of_birth'] ?? '');
@@ -35,31 +40,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($fullName === '') {
         $error = 'Need Full Name.';
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Palihug ibutang ang husto nga Email Address.';
+        $error = 'Please enter a valid email address.';
     } else {
         // Make sure the new email isn't already used by another account.
         $dupCheck = $pdo->prepare("SELECT user_id FROM users WHERE email = ? AND user_id != ?");
         $dupCheck->execute([$email, $userId]);
         if ($dupCheck->fetch()) {
-            $error = 'Gigamit na ni ibang account ang email nga ini.';
+            $error = 'This email is already used by another account.';
         } else {
             $emailChanged = strcasecmp($email, $user['email']) !== 0;
             $stmt = $pdo->prepare("
                 UPDATE users
-                SET full_name = ?, email = ?, phone_number = ?, date_of_birth = ?, gender = ?, civil_status = ?
+                SET full_name = ?, email = ?, phone_number = ?, date_of_birth = ?, gender = ?, civil_status = ?, barangay = ?
                     " . ($emailChanged ? ", email_verified = 0" : "") . "
                 WHERE user_id = ?
             ");
-            $stmt->execute([$fullName, $email, $phone, $dateOfBirth, $gender, $civilStatus, $userId]);
+            $stmt->execute([$fullName, $email, $phone, $dateOfBirth, $gender, $civilStatus, $barangay ?: null, $userId]);
             $_SESSION['full_name'] = $fullName;
-            $success = 'Na-update na ang imong profile.';
+            $success = 'Your profile has been updated.';
             $user['full_name'] = $fullName;
             $user['email'] = $email;
             $user['phone_number'] = $phone;
             $user['date_of_birth'] = $dateOfBirth;
             $user['gender'] = $gender;
             $user['civil_status'] = $civilStatus;
-            $user['registry_barangay'] = $barangay;
+            $user['barangay'] = $barangay;
         }
     }
 }
@@ -70,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Edit Profile</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 <style>
   .content-scroll{padding-bottom:30px;}
   .photo-wrap{text-align:center;margin:10px 0 24px;}
@@ -106,6 +111,248 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .addr-group{display:flex;flex-direction:column;gap:12px;}
   .btn-row{display:flex;gap:10px;margin-top:8px;}
   .btn-row .btn-primary,.btn-row .btn-outline{margin-top:0;}
+  /* =========================================================
+   EDIT PROFILE - LIGHT / DARK MODE
+   ========================================================= */
+
+/* Smooth theme transition */
+body,
+.phone,
+.content-scroll,
+.form-input,
+select,
+input[type="text"],
+input[type="email"],
+input[type="date"],
+.gender-opt,
+.form-label,
+.app-header,
+.btn-row {
+  transition:
+    background-color .25s ease,
+    color .25s ease,
+    border-color .25s ease,
+    box-shadow .25s ease;
+}
+
+/* =========================
+   LIGHT MODE
+   ========================= */
+
+body.light-bg .form-input,
+body.light-bg input[type="text"],
+body.light-bg input[type="email"],
+body.light-bg input[type="date"],
+body.light-bg select {
+  background:#f4f5f8 !important;
+  color:#263047 !important;
+  border:1px solid #d9dce4 !important;
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,.04),
+    0 2px 6px rgba(0,0,0,.08);
+}
+
+body.light-bg .form-input::placeholder,
+body.light-bg input::placeholder {
+  color:#9299aa !important;
+}
+
+body.light-bg .form-label {
+  color:#4e5872 !important;
+}
+
+body.light-bg .gender-opt {
+  color:#30394e !important;
+}
+
+body.light-bg .field-icon {
+  color:#68738a !important;
+}
+
+/* =========================
+   DARK MODE
+   ========================= */
+
+body.dark-bg {
+  background:#0b0f1f !important;
+  color:#f1f4ff;
+}
+
+body.dark-bg .phone {
+  background:#0b0f1f !important;
+  color:#f1f4ff !important;
+}
+
+body.dark-bg .content-scroll {
+  background:#0b0f1f !important;
+}
+
+body.dark-bg .app-header {
+  color:#f1f4ff !important;
+}
+
+body.dark-bg .form-label {
+  color:#aeb8d0 !important;
+}
+
+body.dark-bg .form-input,
+body.dark-bg input[type="text"],
+body.dark-bg input[type="email"],
+body.dark-bg input[type="date"],
+body.dark-bg select {
+  background:#151d36 !important;
+  color:#f3f6ff !important;
+  border:1px solid #293552 !important;
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,.20),
+    0 2px 7px rgba(0,0,0,.20);
+}
+
+body.dark-bg .form-input::placeholder,
+body.dark-bg input::placeholder {
+  color:#75819d !important;
+}
+
+body.dark-bg .field-icon {
+  color:#9aa7c4 !important;
+}
+
+body.dark-bg .gender-opt {
+  color:#dce2f2 !important;
+}
+
+/* Radio buttons */
+body.dark-bg .gender-opt input[type="radio"] {
+  accent-color:#39ff88;
+}
+
+/* Select dropdown */
+body.dark-bg select option {
+  background:#151d36;
+  color:#f3f6ff;
+}
+
+/* Disabled Province / Municipality */
+body.dark-bg select.form-input:disabled {
+  background:#11182d !important;
+  color:#7f8ba8 !important;
+  border-color:#27324d !important;
+  opacity:1 !important;
+}
+
+body.light-bg select.form-input:disabled {
+  background:#eef0f5 !important;
+  color:#8c94a6 !important;
+  opacity:1 !important;
+}
+
+/* Date input — browser native controls */
+body.dark-bg input[type="date"] {
+  color-scheme:dark;
+}
+
+body.light-bg input[type="date"] {
+  color-scheme:light;
+}
+
+/* Calendar icon */
+body.dark-bg input[type="date"]::-webkit-calendar-picker-indicator {
+  filter:invert(1);
+  opacity:.85;
+  cursor:pointer;
+}
+
+body.light-bg input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity:.85;
+  cursor:pointer;
+}
+
+/* Focus state */
+body.dark-bg .form-input:focus,
+body.dark-bg select:focus {
+  border-color:#39ff88 !important;
+  outline:none;
+  box-shadow:
+    0 0 0 2px rgba(57,255,136,.12),
+    0 4px 10px rgba(0,0,0,.20);
+}
+
+body.light-bg .form-input:focus,
+body.light-bg select:focus {
+  border-color:#39ff88 !important;
+  outline:none;
+  box-shadow:
+    0 0 0 2px rgba(57,255,136,.12),
+    0 3px 8px rgba(0,0,0,.08);
+}
+
+/* Buttons */
+.btn-row {
+  display:flex;
+  gap:10px;
+  width:100%;
+}
+
+.btn-row .btn-outline,
+.btn-row .btn-primary {
+  flex:1;
+  min-height:48px;
+  border-radius:16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+  font-size:13px;
+}
+
+/* Keep Cancel readable in dark mode */
+body.dark-bg .btn-row .btn-outline {
+  background:#151d36 !important;
+  color:#39ff88 !important;
+  border:1px solid #39ff88 !important;
+}
+
+body.light-bg .btn-row .btn-outline {
+  background:#ffffff !important;
+  color:#20df72 !important;
+  border:1px solid #39ff88 !important;
+}
+
+/* Save button */
+body.dark-bg .btn-row .btn-primary,
+body.light-bg .btn-row .btn-primary {
+  background:#39ef83 !important;
+  color:#071225 !important;
+  border:none !important;
+  box-shadow:0 7px 18px rgba(57,255,136,.20);
+}
+
+body.dark-bg .btn-row .btn-primary:hover,
+body.light-bg .btn-row .btn-primary:hover {
+  filter:brightness(1.05);
+}
+
+/* Mobile spacing */
+@media (max-width:420px) {
+  .gender-row {
+    gap:14px !important;
+    flex-wrap:wrap;
+  }
+
+  .gender-opt {
+    font-size:12.5px !important;
+  }
+
+  .btn-row {
+    gap:9px;
+  }
+
+  .btn-row .btn-outline,
+  .btn-row .btn-primary {
+    min-height:47px;
+    font-size:13px;
+  }
+}
 </style>
 </head>
 <body class="<?= $isDark ? 'dark-bg' : 'light-bg' ?>">
@@ -215,8 +462,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <option>Manolo Fortich</option>
           </select>
           <select name="barangay" class="form-input">
+            <?php $currentBarangay = $user['barangay'] ?: $user['registry_barangay']; ?>
+            <option value="">-- Select Barangay --</option>
             <?php foreach ($barangays as $b): ?>
-              <option value="<?= htmlspecialchars($b['name']) ?>" <?= ($user['registry_barangay'] ?? '') === $b['name'] ? 'selected' : '' ?>>
+              <option value="<?= htmlspecialchars($b['name']) ?>" <?= ($currentBarangay === $b['name']) ? 'selected' : '' ?>>
                 <?= htmlspecialchars($b['name']) ?>
               </option>
             <?php endforeach; ?>

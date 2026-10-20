@@ -939,6 +939,7 @@ $fullName = $_SESSION['search_full_name'] ?? '';
     <button type="button" class="btn-primary" onclick="showScreen('screen-search')" style="border:none;">Search Again</button>
   </section>
 </div>
+
 <script>
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -948,7 +949,7 @@ function showScreen(id) {
 async function doSearch() {
   const name = document.getElementById('fullNameInput').value.trim();
   if (!name) {
-    alert('Palihug i-type ang imong full name.');
+    alert('Please enter your full name.');
     return;
   }
 
@@ -971,7 +972,7 @@ async function doSearch() {
       }
     }, 2700);
   } catch (err) {
-    alert('Naay sayop sa pag-search. Sulayi og usab.');
+    alert('Something went wrong while searching. Please try again.');
     showScreen('screen-search');
   }
 }

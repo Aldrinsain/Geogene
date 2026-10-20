@@ -24,11 +24,55 @@ html,body{overflow-x:hidden;max-width:100%;}
   --border:rgba(255,255,255,0.08);
   --bg-page:#070c1c;
   --bg-card:var(--blue-card);
+  --nav-bg:rgba(21,34,68,0.7);
+  --nav-shadow:0 12px 30px rgba(0,0,0,0.4);
+  --nav-pill-bg:#ffffff;
+  --nav-pill-text:#0B132B;
+  --nav-pill-shadow:0 6px 16px rgba(0,0,0,0.35);
   --radius:18px;
 
   /* backward-compatible aliases used across dashboard/tree/map/profile/settings/reports */
   --primary:var(--green);
   --primary-dark:var(--green-dim);
+  --primary-light:rgba(57,255,136,0.12);
+}
+
+body.light-bg{
+  --blue:#ffffff;
+  --blue-light:#f3f5f9;
+  --blue-lighter:#e9edf5;
+  --blue-card:#ffffff;
+  --text-main:#12162b;
+  --text-secondary:#4a5170;
+  --text-muted:#5c6280;
+  --border:rgba(11,19,43,0.10);
+  --bg-page:#e8e8e6;
+  --bg-card:var(--blue-card);
+  --nav-bg:rgba(255,255,255,0.85);
+  --nav-shadow:0 8px 24px rgba(20,25,45,0.14);
+  --nav-pill-bg:#12162b;
+  --nav-pill-text:#ffffff;
+  --nav-pill-shadow:0 6px 16px rgba(18,22,43,0.28);
+  --danger-light:rgba(255,92,108,0.10);
+  --primary-light:rgba(43,216,115,0.16);
+}
+body.dark-bg{
+  --blue:#0B132B;
+  --blue-light:#152244;
+  --blue-lighter:#1f2f57;
+  --blue-card:#101b3c;
+  --text-main:#f2f4fa;
+  --text-secondary:#a8b0d0;
+  --text-muted:#6d759a;
+  --border:rgba(255,255,255,0.08);
+  --bg-page:#070c1c;
+  --bg-card:var(--blue-card);
+  --nav-bg:rgba(21,34,68,0.7);
+  --nav-shadow:0 12px 30px rgba(0,0,0,0.4);
+  --nav-pill-bg:#ffffff;
+  --nav-pill-text:#0B132B;
+  --nav-pill-shadow:0 6px 16px rgba(0,0,0,0.35);
+  --danger-light:rgba(255,92,108,0.12);
   --primary-light:rgba(57,255,136,0.12);
 }
 
@@ -214,24 +258,41 @@ body{
 .icon-circle.red{background:radial-gradient(circle at 30% 30%, rgba(255,92,108,0.25), rgba(255,92,108,0.05));color:var(--danger);box-shadow:0 0 24px rgba(255,92,108,0.2);}
 @keyframes popIn{ 0%{opacity:0;transform:scale(.4);} 100%{opacity:1;transform:scale(1);} }
 
-/* ---------- BOTTOM NAV (glassmorphism floating bar) ---------- */
+/* ---------- BOTTOM NAV (glassmorphism floating bar, pill highlight) ---------- */
 .bottom-nav{
   position:absolute;bottom:14px;left:14px;right:14px;
-  background:rgba(21,34,68,0.7);
+  background:var(--nav-bg);
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  border:1px solid rgba(255,255,255,0.08);
-  border-radius:20px;
-  display:flex;justify-content:space-around;padding:12px 0;
-  box-shadow:0 12px 30px rgba(0,0,0,0.4);
+  border:1px solid var(--border);
+  border-radius:24px;
+  display:flex;justify-content:space-around;align-items:center;
+  padding:8px;
+  box-shadow:var(--nav-shadow);
+  overflow:hidden; /* keeps the active pill from ever poking outside the bar */
 }
 .nav-item{
-  display:flex;flex-direction:column;align-items:center;gap:3px;
-  font-size:10px;color:var(--text-muted);text-decoration:none;
-  transition:color .2s ease, transform .2s ease;
+  position:relative;
+  flex:1 1 0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;
+  padding:8px 4px;
+  font-size:10px;line-height:1.1;
+  color:var(--text-muted);text-decoration:none;
+  border-radius:18px;
+  z-index:1;
+  transition:color .25s ease;
 }
-.nav-item.active{color:var(--green);font-weight:700;transform:translateY(-2px);}
-.nav-item .nav-icon{font-size:18px;}
-.nav-item.active .nav-icon{filter:drop-shadow(0 0 6px rgba(57,255,136,0.6));}
+.nav-item.active{
+  color:var(--nav-pill-text);
+  font-weight:700;
+  background:var(--nav-pill-bg);
+  box-shadow:var(--nav-pill-shadow);
+  animation:navPillIn .25s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes navPillIn{ 0%{transform:scale(.85);opacity:.6;} 100%{transform:scale(1);opacity:1;} }
+.nav-item .nav-icon{font-size:18px;color:inherit;display:flex;}
+.nav-item .nav-icon svg{display:block;color:inherit;}
+.nav-item.active .nav-icon{filter:none;}
 
 /* ---------- SCREEN FADE ---------- */
 .screen{display:none;animation:fadeSlideUp .4s ease both;}

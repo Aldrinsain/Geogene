@@ -48,8 +48,14 @@ if (!isset($_SESSION['user_id']) && empty($_SESSION['matched_record_id'])) {
         <span class="corner tl"></span><span class="corner tr"></span>
         <span class="corner bl"></span><span class="corner br"></span>
       </div>
-      <p class="cam-error" id="camError" style="display:none;">Dili ma-access ang camera. Palihug tugoti ang camera permission unya i-reload ang page.</p>
+      <p class="cam-error" id="camError" style="display:none;">Unable to access the camera. Please allow camera permission, then reload the page.</p>
       <canvas id="idCanvas" style="display:none;"></canvas>
+
+      <button type="button" id="flashBtn" class="flash-toggle" style="display:none;" title="Flashlight" aria-label="Toggle Flashlight">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 2h10l-2 6h3l-8 12 1-8H8z"/>
+        </svg>
+      </button>
     </div>
 
     <div class="tip-box">

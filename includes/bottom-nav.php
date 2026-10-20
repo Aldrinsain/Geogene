@@ -13,7 +13,7 @@ require_once __DIR__ . '/logo.php';
       <svg xmlns="http://www.w3.org/2000/svg"
            width="24" height="24"
            viewBox="0 0 24 24"
-           fill="<?= $activeNav === 'dashboard' ? '#0fa500' : '#ffffff' ?>">
+           fill="currentColor">
         <path d="M3 13h1v7c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-7h1c.4 0 .77-.24.92-.62.15-.37.07-.8-.22-1.09l-8.99-9a.996.996 0 0 0-1.41 0l-9.01 9c-.29.29-.37.72-.22 1.09s.52.62.92.62Zm7 7v-5h4v5zm2-15.59 6 6V20h-2v-5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v5H6v-9.59z"/>
       </svg>
     </span>
@@ -39,12 +39,12 @@ require_once __DIR__ . '/logo.php';
     >
       <path
         d="M853.333333 192V149.333333h-192v106.666667H320v234.666667H170.666667v42.666666h149.333333v234.666667h341.333333v106.666667h192v-42.666667h-149.333333v-170.666667h149.333333v-42.666666h-192v106.666666H362.666667V298.666667h298.666666v106.666666h192v-42.666666h-149.333333V192z"
-        fill="<?= $activeNav === 'tree' ? '#39FF88' : '#ffffff' ?>"
+        fill="currentColor"
       />
 
       <path
         d="M85.333333 426.666667h170.666667v170.666666H85.333333z"
-        fill="<?= $activeNav === 'tree' ? '#39FF88' : '#ffffff' ?>"
+        fill="currentColor"
       />
 
       <path
@@ -54,7 +54,7 @@ require_once __DIR__ . '/logo.php';
            M426.666667 661.333333h170.666667v170.666667h-170.666667z
            M768 768h170.666667v170.666667h-170.666667z
            M768 554.666667h170.666667v170.666667h-170.666667z"
-        fill="<?= $activeNav === 'tree' ? '#39FF88' : '#ffffff' ?>"
+        fill="currentColor"
       />
     </svg>
   </span>
@@ -71,7 +71,7 @@ require_once __DIR__ . '/logo.php';
       <svg xmlns="http://www.w3.org/2000/svg"
            width="24" height="24"
            viewBox="0 0 24 24"
-           fill="<?= $activeNav === 'map' ? '#0fa500' : '#ffffff' ?>">
+           fill="currentColor">
 
         <path d="M6 8.44c-.02 5.1 5.17 9.18 5.39 9.35.18.14.4.21.61.21s.43-.07.61-.21c.22-.17 5.41-4.25 5.39-9.35C18 4.89 15.31 2 12 2S6 4.89 6 8.44m10 0c.01 3.19-2.74 6.08-4 7.24-1.26-1.15-4.01-4.04-4-7.24C8 5.99 9.79 4 12 4s4 1.99 4 4.44"></path>
 
@@ -92,7 +92,7 @@ require_once __DIR__ . '/logo.php';
       <svg xmlns="http://www.w3.org/2000/svg"
            width="24" height="24"
            viewBox="0 0 24 24"
-           fill="<?= $activeNav === 'profile' ? '#0fa500' : '#ffffff' ?>">
+           fill="currentColor">
 
         <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5m0-8c1.65 0 3 1.35 3 3s-1.35 3-3 3-3-1.35-3-3 1.35-3 3-3M4 22h16c.55 0 1-.45 1-1v-1c0-3.86-3.14-7-7-7h-4c-3.86 0-7 3.14-7 7v1c0 .55.45 1 1 1m6-7h4c2.76 0 5 2.24 5 5H5c0-2.76 2.24-5 5-5"></path>
 

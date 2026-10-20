@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/includes/name-format.php';
 
 $recordId = (int) ($_GET['id'] ?? 0);
 
@@ -38,7 +39,10 @@ $typeLabels = [
 ];
 $typeInfo = $typeLabels[$registryType] ?? $typeLabels['birth'];
 
-$fullName = field($row, 'full_name') ?: trim(field($row, 'first_name') . ' ' . field($row, 'middle_name') . ' ' . field($row, 'last_name') . ' ' . field($row, 'suffix'));
+// Always recompute fresh from first/middle/last (ignoring the stored
+// full_name column, and never folding in the Suffix) so older records
+// saved before this fix still display correctly.
+$fullName = formatFullName(field($row, 'last_name'), field($row, 'first_name'), field($row, 'middle_name'), field($row, 'suffix')) ?: field($row, 'full_name');
 $fullName = $fullName !== '' ? $fullName : 'Unnamed Record';
 
 $dateOfEvent = field($row, 'date_of_event');
@@ -98,6 +102,9 @@ require_once __DIR__ . '/includes/staff-header.php';
 
 <div class="cr-view-actions">
   <button type="button" class="btn btn-primary" onclick="window.print()">🖨️ Print Record</button>
+  <?php if (!empty($row['certificate_data'])): ?>
+    <a href="civil-registry-print.php?id=<?= $recordId ?>" class="btn btn-outline">📄 Print Official Certificate Format</a>
+  <?php endif; ?>
 </div>
 
 <div class="cr-doc-wrap">
@@ -118,47 +125,61 @@ require_once __DIR__ . '/includes/staff-header.php';
     </div>
 
     <div class="cr-doc-section">
-      <div class="cr-doc-section-title">Registry Details</div>
+      <div class="cr-doc-section-title">Civil Registry Record</div>
       <div class="cr-doc-grid">
+        <div class="cr-doc-field"><div class="f-label">Type</div><div class="f-value"><?= htmlspecialchars(ucfirst($registryType)) ?></div></div>
+        <div class="cr-doc-field"><div class="f-label">Registry No.</div><div class="f-value"><?= htmlspecialchars(field($row, 'registry_number', '—')) ?></div></div>
+        <div class="cr-doc-field"><div class="f-label">Civil Status</div><div class="f-value"><?= htmlspecialchars(ucfirst(field($row, 'civil_status', '—'))) ?></div></div>
+        <div class="cr-doc-field"><div class="f-label">Gender</div><div class="f-value"><?= htmlspecialchars(ucfirst(field($row, 'sex', '—'))) ?></div></div>
+      </div>
+    </div>
+
+    <div class="cr-doc-section">
+      <div class="cr-doc-section-title">Registry Information</div>
+      <div class="cr-doc-grid">
+        <div class="cr-doc-field"><div class="f-label">Barangay</div><div class="f-value"><?= htmlspecialchars(field($row, 'barangay', '—')) ?></div></div>
+        <?php $zoneVal = field($row, 'zone'); if ($zoneVal !== ''): ?>
+          <div class="cr-doc-field"><div class="f-label">Zone</div><div class="f-value"><?= htmlspecialchars($zoneVal) ?></div></div>
+        <?php endif; ?>
+        <div class="cr-doc-field"><div class="f-label">City/Municipality</div><div class="f-value"><?= htmlspecialchars(field($row, 'city_municipality', '—')) ?></div></div>
+        <div class="cr-doc-field"><div class="f-label">Province</div><div class="f-value">Bukidnon</div></div>
         <div class="cr-doc-field"><div class="f-label">Book No.</div><div class="f-value"><?= htmlspecialchars(field($row, 'book_no', '—')) ?></div></div>
         <div class="cr-doc-field"><div class="f-label">Page No.</div><div class="f-value"><?= htmlspecialchars(field($row, 'page_no', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">City/Municipality</div><div class="f-value"><?= htmlspecialchars(field($row, 'city_municipality', '—')) ?></div></div>
         <?php $datePrepared = field($row, 'date_prepared'); ?>
         <div class="cr-doc-field"><div class="f-label">Date Prepared</div><div class="f-value"><?= $datePrepared ? date('F j, Y', strtotime($datePrepared)) : '—' ?></div></div>
-      </div>
-    </div>
-
-    <div class="cr-doc-section">
-      <div class="cr-doc-section-title">Personal Information</div>
-      <div class="cr-doc-grid">
-        <div class="cr-doc-field"><div class="f-label">Last Name</div><div class="f-value"><?= htmlspecialchars(field($row, 'last_name', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">First Name</div><div class="f-value"><?= htmlspecialchars(field($row, 'first_name', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Middle Name</div><div class="f-value"><?= htmlspecialchars(field($row, 'middle_name', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Suffix</div><div class="f-value"><?= htmlspecialchars(field($row, 'suffix', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Gender</div><div class="f-value"><?= htmlspecialchars(ucfirst(field($row, 'sex', '—'))) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Civil Status</div><div class="f-value"><?= htmlspecialchars(ucfirst(field($row, 'civil_status', '—'))) ?></div></div>
-      </div>
-    </div>
-
-    <div class="cr-doc-section">
-      <div class="cr-doc-section-title"><?= htmlspecialchars(ucfirst($registryType)) ?> Details</div>
-      <div class="cr-doc-grid">
         <div class="cr-doc-field"><div class="f-label"><?= $typeInfo['dateLabel'] ?></div><div class="f-value"><?= htmlspecialchars($dateOfEventDisplay) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Registry Number</div><div class="f-value"><?= htmlspecialchars(field($row, 'registry_number', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Street</div><div class="f-value"><?= htmlspecialchars(field($row, 'place_of_event', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Barangay</div><div class="f-value"><?= htmlspecialchars(field($row, 'barangay', '—')) ?></div></div>
+        <?php $streetVal = field($row, 'place_of_event'); if ($streetVal !== ''): ?>
+          <div class="cr-doc-field"><div class="f-label"><?= $registryType === 'death' ? 'Place of Death' : 'Street' ?></div><div class="f-value"><?= htmlspecialchars($streetVal) ?></div></div>
+        <?php endif; ?>
         <?php if ($registryType === 'marriage' && field($row, 'spouse_name') !== ''): ?>
-          <div class="cr-doc-field full"><div class="f-label">Spouse's Name</div><div class="f-value"><?= htmlspecialchars(field($row, 'spouse_name', '—')) ?></div></div>
+          <div class="cr-doc-field full"><div class="f-label">Spouse's Name</div><div class="f-value"><?= htmlspecialchars(gg_display_name(field($row, 'spouse_name', '—'))) ?></div></div>
         <?php endif; ?>
       </div>
     </div>
 
-    <?php if (field($row, 'father_name') !== '' || field($row, 'mother_name') !== ''): ?>
+    <?php if (field($row, 'father_name') !== '' || field($row, 'mother_name') !== '' || field($row, 'wife_father_name') !== '' || field($row, 'wife_mother_name') !== '' || $registryType === 'birth'): ?>
     <div class="cr-doc-section">
-      <div class="cr-doc-section-title">Parents</div>
+      <div class="cr-doc-section-title">Family Information</div>
       <div class="cr-doc-grid">
-        <div class="cr-doc-field"><div class="f-label">Father's Name</div><div class="f-value"><?= htmlspecialchars(field($row, 'father_name', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Mother's Name</div><div class="f-value"><?= htmlspecialchars(field($row, 'mother_name', '—')) ?></div></div>
+        <div class="cr-doc-field full"><div class="f-label"><?= $registryType === 'birth' ? 'Name of Child' : ($registryType === 'death' ? 'Name of Deceased' : 'Name of Husband') ?></div><div class="f-value"><?= htmlspecialchars($fullName) ?></div></div>
+        <div class="cr-doc-field"><div class="f-label"><?= $registryType === 'marriage' ? 'Name of Mother (H)' : ($registryType === 'death' ? 'Maiden Name of Mother' : 'Mother Name') ?></div><div class="f-value"><?= htmlspecialchars(gg_display_name(field($row, 'mother_name', '—'))) ?></div></div>
+        <div class="cr-doc-field"><div class="f-label"><?= $registryType === 'marriage' ? 'Name of Father (H)' : 'Father Name' ?></div><div class="f-value"><?= htmlspecialchars(gg_display_name(field($row, 'father_name', '—'))) ?></div></div>
+        <?php if ($registryType === 'marriage'): ?>
+          <div class="cr-doc-field"><div class="f-label">Name of Mother (W)</div><div class="f-value"><?= htmlspecialchars(gg_display_name(field($row, 'wife_mother_name', '—'))) ?></div></div>
+          <div class="cr-doc-field"><div class="f-label">Name of Father (W)</div><div class="f-value"><?= htmlspecialchars(gg_display_name(field($row, 'wife_father_name', '—'))) ?></div></div>
+        <?php endif; ?>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($registryType === 'death'): ?>
+    <div class="cr-doc-section">
+      <div class="cr-doc-section-title">Death Details</div>
+      <div class="cr-doc-grid">
+        <?php $dobVal = field($row, 'date_of_birth'); ?>
+        <div class="cr-doc-field"><div class="f-label">Date of Birth</div><div class="f-value"><?= $dobVal ? date('F j, Y', strtotime($dobVal)) : '—' ?></div></div>
+        <div class="cr-doc-field"><div class="f-label">Age at Time of Death</div><div class="f-value"><?= htmlspecialchars(field($row, 'age_at_death', '—')) ?></div></div>
+        <div class="cr-doc-field full"><div class="f-label">Cause of Death</div><div class="f-value"><?= htmlspecialchars(field($row, 'cause_of_death', '—')) ?></div></div>
       </div>
     </div>
     <?php endif; ?>
@@ -174,6 +195,15 @@ require_once __DIR__ . '/includes/staff-header.php';
       <span>Date Registered: <?= htmlspecialchars($createdAtDisplay) ?></span>
       <span>Record ID: MCRO-<?= str_pad((string) $recordId, 6, '0', STR_PAD_LEFT) ?></span>
     </div>
+
+    <?php if (!empty($row['scan_image_path'])): ?>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #ccc;font-size:11px;color:#888;">
+        Saved from a scanned certificate image
+        <?php if (!empty($row['verified_at'])): ?>
+          &nbsp;·&nbsp; Verified <?= date('F j, Y g:i A', strtotime($row['verified_at'])) ?>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
 
   </div>
 </div>

@@ -1,0 +1,38 @@
+# GeoGene Staff - upload limits for certificate scanning
+#
+# The app itself no longer caps certificate photo size (see
+# civil-registry-scan-inline.php / civil-registry-scan.php), but PHP's own
+# php.ini settings are a HARD ceiling that no PHP script can raise for
+# itself mid-request. These directives raise that ceiling here instead -
+# mainly for Bulk Scan (civil-registry-bulk-scan.php), where staff may
+# upload many full-resolution phone photos, one certificate at a time, in
+# a single visit to the page.
+#
+# Wrapped in <IfModule> so this is silently skipped (never a fatal 500)
+# on a server running PHP as FPM/CGI, where php_value/php_admin_value in
+# .htaccess are NOT allowed under mod_php's own rules - on that kind of
+# setup, raise these same three settings directly in php.ini (or the
+# pool's .conf file) instead:
+#   upload_max_filesize, post_max_size, max_file_uploads,
+#   max_execution_time, max_input_time
+<IfModule mod_php.c>
+  php_value upload_max_filesize 64M
+  php_value post_max_size 64M
+  php_value max_file_uploads 100
+  php_value max_execution_time 300
+  php_value max_input_time 300
+</IfModule>
+<IfModule mod_php7.c>
+  php_value upload_max_filesize 64M
+  php_value post_max_size 64M
+  php_value max_file_uploads 100
+  php_value max_execution_time 300
+  php_value max_input_time 300
+</IfModule>
+<IfModule mod_php8.c>
+  php_value upload_max_filesize 64M
+  php_value post_max_size 64M
+  php_value max_file_uploads 100
+  php_value max_execution_time 300
+  php_value max_input_time 300
+</IfModule>

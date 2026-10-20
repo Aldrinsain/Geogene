@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../staff/includes/name-format.php';   // shared name rules (Given Middle Surname, Mixed Case)
 require_once __DIR__ . '/../includes/logo.php';
 
 $registerError = '';
@@ -11,7 +12,17 @@ if (isset($_GET['record_id'])) {
 }
 $hasMatchedRecord = !empty($_SESSION['matched_record_id']);
 $hasScanVerified = !empty($_SESSION['identity_scan_verified']);
-$suggestedName = $_GET['name'] ?? ($_SESSION['search_full_name'] ?? '');
+$suggestedName = gg_display_name($_GET['name'] ?? ($_SESSION['search_full_name'] ?? ''));
+
+// ---------- Kuhaon ang sex/civil status/mother/father gikan sa na-verify nga MCRO record ----------
+// (dili gikan sa OCR/ID scan - daghang government ID walay naka-print nga
+// civil status o parents' names, mao nga ang official record ang gigamit.)
+$matchedRecord = null;
+if ($hasMatchedRecord) {
+    $stmt = $pdo->prepare("SELECT sex, civil_status, mother_name, father_name FROM civil_registry_records WHERE record_id = ?");
+    $stmt->execute([$_SESSION['matched_record_id']]);
+    $matchedRecord = $stmt->fetch();
+}
 
 // Kung naa nay na-verify nga ngalan pero wala pa na-scan ang ID, ipadala una
 // sa Scan ID step (dili diretso motugot og Register).
@@ -23,35 +34,43 @@ if ($hasMatchedRecord && !$hasScanVerified && $_SERVER['REQUEST_METHOD'] !== 'PO
 // ---------- HANDLE REGISTER ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($_SESSION['matched_record_id'])) {
-        $registerError = 'Kinahanglan una nga i-search ang imong full name sa MCRO records.';
+        $registerError = 'You must first search for your full name in the MCRO records.';
     } elseif (empty($_SESSION['identity_scan_verified'])) {
-        $registerError = 'Kinahanglan una nga makompleto ang Scan ID verification.';
+        $registerError = 'You must first complete the Scan ID verification.';
     } else {
-        $fullName = trim($_POST['full_name'] ?? '');
+        $fullName = gg_display_name(trim($_POST['full_name'] ?? ''));   // "Given Middle Surname", Mixed Case
         $email    = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $confirm  = $_POST['confirm_password'] ?? '';
 
         if ($fullName === '' || $email === '' || $password === '') {
-            $registerError = 'Palihug pun-a ang tanan nga fields.';
+            $registerError = 'Please fill in all fields.';
         } elseif ($password !== $confirm) {
-            $registerError = 'Dili magtugma ang password ug confirm password.';
+            $registerError = 'Password and confirm password do not match.';
         } elseif (strlen($password) < 8) {
-            $registerError = 'Ang password dapat at least 8 characters.';
+            $registerError = 'Password must be at least 8 characters.';
         } else {
             $stmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ?");
             $stmt->execute([$email]);
 
             if ($stmt->fetch()) {
-                $registerError = 'Naay account na nga naka-register ani nga email.';
+                $registerError = 'An account is already registered with this email.';
             } else {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
                 $matchedRecordId = $_SESSION['matched_record_id'];
 
+                // Gikan sa na-verify nga MCRO record - dili gikan sa user input
+                // mismo, aron mapadayon ang integrity sa official records.
+                $stmt = $pdo->prepare("SELECT sex, civil_status FROM civil_registry_records WHERE record_id = ?");
+                $stmt->execute([$matchedRecordId]);
+                $recordDetails = $stmt->fetch();
+                $gender = $recordDetails['sex'] ?? null;
+                $civilStatus = $recordDetails['civil_status'] ?? null;
+
                 // identity_verified = 1 dayon kay na-human na ang Scan ID
                 // step una pa ni nga Register (Search Name -> Scan ID -> Register).
-                $stmt = $pdo->prepare("INSERT INTO users (full_name, email, password_hash, status, email_verified, identity_verified, matched_record_id) VALUES (?, ?, ?, 'pending', 0, 1, ?)");
-                $stmt->execute([$fullName, $email, $hash, $matchedRecordId]);
+                $stmt = $pdo->prepare("INSERT INTO users (full_name, email, password_hash, status, email_verified, identity_verified, matched_record_id, gender, civil_status) VALUES (?, ?, ?, 'pending', 0, 1, ?, ?, ?)");
+                $stmt->execute([$fullName, $email, $hash, $matchedRecordId, $gender, $civilStatus]);
                 $userId = $pdo->lastInsertId();
 
                 $stmt = $pdo->prepare("
@@ -124,8 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     position:relative;background:#0B132B;display:flex;flex-direction:column;
     padding:20px 26px 24px;
     animation:cardEnter .6s cubic-bezier(.65,0,.35,1) both;
-    flex:1;justify-content:center;
-    overflow:hidden;
+    flex:1;justify-content:flex-start;
+    overflow-y:auto;
   }
   @keyframes cardEnter{ from{transform:translateY(24px);opacity:0;} to{transform:translateY(0);opacity:1;} }
 
@@ -204,6 +223,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     padding:10px 12px;margin-bottom:16px;line-height:1.5;border:1px solid rgba(255,196,84,0.25);
   }
   .warn-banner a{color:#ffd27a;font-weight:700;}
+
+  .readonly-info-box{
+    background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+    border-radius:14px;padding:10px 14px;margin-bottom:12px;
+  }
+  .ri-row{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:6px 0;font-size:12px;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .ri-row:last-child{border-bottom:none;}
+  .ri-label{color:#8a93b8;}
+  .ri-value{color:#f2f4fa;font-weight:600;text-align:right;}
 </style>
 </head>
 <body>
@@ -215,7 +247,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </a>
 
     <div class="auth-header">
-      <div class="auth-logo"><?= geogene_logo(40, '#39FF88') ?></div>
+      <div class="auth-logo">
+<svg role="img" focusable="false" aria-hidden="true"
+     xmlns="http://www.w3.org/2000/svg"
+     width="48" height="48" viewBox="0 0 14 14">
+  <g transform="rotate(90 7 7)">
+    <path fill="#C8E6C9" d="M4.3 7.3v3.3h4.8v1.5h2.7v-.6H9.7V9.1h2.1v-.6H9.1V10H4.9V4h4.2v1.5h2.7v-.6H9.7V2.5h2.1v-.6H9.1v1.5H4.3v3.3H2.2v.6z"/>
+    <path fill="#81C784" d="M1 5.8h2.4v2.4H1z"/>
+    <path fill="#43A047" d="M10.6 4H13v2.4h-2.4zm0-3H13v2.4h-2.4zM5.8 2.5h2.4v2.4H5.8zm0 6.6h2.4v2.4H5.8zm4.8 1.5H13V13h-2.4zm0-3H13V10h-2.4z"/>
+  </g>
+</svg>
+</div>
       <div class="auth-title">Create Your Account</div>
       <p class="auth-sub">Confirm your name using the official MCRO records before creating your GeoGene account.</p>
     </div>
@@ -227,8 +269,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <?php if (!$hasMatchedRecord): ?>
         <div class="warn-banner">
-          ⚠ Kinahanglan una nga i-search ug ma-verify ang imong full name sa
-          <a href="../identity-verification/search-name.php">MCRO records</a> una ka makahimo og account.
+          ⚠ You must first search and verify your full name in the
+          <a href="../identity-verification/search-name.php">MCRO records</a> before you can create an account.
         </div>
       <?php endif; ?>
 
@@ -246,6 +288,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <input type="text" name="full_name" class="field-input" placeholder="Full Name"
                value="<?= htmlspecialchars($suggestedName) ?>" required>
       </div>
+
+      <?php if ($matchedRecord): ?>
+      <!-- Kining mga sunod nga fields kay auto-filled gikan sa na-verify nga MCRO
+           record (dili gikan sa ID scan mismo) - dili na ma-edit sa user kay
+           kini ang OFFICIAL nga datos gikan sa civil registry. -->
+      <div class="readonly-info-box">
+        <div class="ri-row">
+          <span class="ri-label">Sex</span>
+          <span class="ri-value"><?= htmlspecialchars(ucfirst($matchedRecord['sex'] ?? 'N/A')) ?></span>
+        </div>
+        <div class="ri-row">
+          <span class="ri-label">Civil Status</span>
+          <span class="ri-value"><?= htmlspecialchars(ucfirst($matchedRecord['civil_status'] ?? 'N/A')) ?></span>
+        </div>
+        <div class="ri-row">
+          <span class="ri-label">Mother's Name</span>
+          <span class="ri-value"><?= htmlspecialchars($matchedRecord['mother_name'] ?? 'N/A') ?></span>
+        </div>
+        <div class="ri-row">
+          <span class="ri-label">Father's Name</span>
+          <span class="ri-value"><?= htmlspecialchars($matchedRecord['father_name'] ?? 'N/A') ?></span>
+        </div>
+      </div>
+      <?php endif; ?>
 
       <div class="field-group">
         <span class="field-icon">

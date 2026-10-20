@@ -28,10 +28,10 @@ if (isset($_GET['resend'])) {
 
     if (!$emailSent) {
         $_SESSION['dev_otp_preview'] = $otp;
-        $error = 'Gi-resend na ang bag-o nga code. (Dev mode: makita sa ubos kay wala pa na-setup ang SMTP.)';
+        $error = 'A new code has been sent. (Dev mode: shown below because SMTP is not set up yet.)';
     } else {
         unset($_SESSION['dev_otp_preview']);
-        $error = 'Gi-resend na ang bag-o nga code sa imong email.';
+        $error = 'A new code has been sent to your email.';
     }
 }
 
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $enteredOtp = implode('', $_POST['otp'] ?? []);
 
     if (strlen($enteredOtp) !== 6) {
-        $error = 'Palihug i-type ang tibuok 6-digit code.';
+        $error = 'Please enter the complete 6-digit code.';
     } else {
         $stmt = $pdo->prepare("
             SELECT * FROM otp_codes
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $otpRow = $stmt->fetch();
 
         if (!$otpRow) {
-            $error = 'Sayop o na-expire na ang code. Palihug sulayi og usab.';
+            $error = 'The code is incorrect or has expired. Please try again.';
         } else {
             $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE otp_id = ?")->execute([$otpRow['otp_id']]);
             $pdo->prepare("UPDATE users SET email_verified = 1, status = 'active' WHERE user_id = ?")->execute([$userId]);
@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Verify Email</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 </head>
 <body>
 
@@ -104,8 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <?php if (!empty($_SESSION['dev_otp_preview'])): ?>
       <div style="background:#fff8e1;border:1px solid #f0c95a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:#7a5c00;text-align:center;">
-        ⚠ <strong>DEV MODE</strong> — wala pa na-setup ang SMTP email.<br>
-        Imong OTP code: <strong style="font-size:16px;letter-spacing:3px;"><?= htmlspecialchars($_SESSION['dev_otp_preview']) ?></strong>
+        ⚠ <strong>DEV MODE</strong> — SMTP email is not set up yet.<br>
+        Your OTP code: <strong style="font-size:16px;letter-spacing:3px;"><?= htmlspecialchars($_SESSION['dev_otp_preview']) ?></strong>
       </div>
     <?php endif; ?>
 
@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <button type="submit" class="btn-primary">Verify Code</button>
     </form>
 
-    <p class="footer-text">Wala nimo nadawat ang code? <a href="verify-email.php?resend=1">Resend Code</a></p>
+    <p class="footer-text">Didn't receive the code? <a href="verify-email.php?resend=1">Resend Code</a></p>
   <?php else: ?>
     <div class="icon-circle green">✔</div>
     <h1 class="title center">Email Verified!</h1>
@@ -126,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <a href="../dashboard/dashboard.php" class="btn-primary" style="text-decoration:none;">Continue to Dashboard</a>
   <?php endif; ?>
 </div>
+
 <script>
 // Auto-advance sa sunod nga OTP box, ug auto-submit sa human ma-fill tanan
 const boxes = document.querySelectorAll('.otp-box');

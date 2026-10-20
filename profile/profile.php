@@ -24,7 +24,7 @@ $activeNav = 'profile';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - My Profile</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 <style>
   .content-scroll{padding-bottom:80px;}
   .app-header{justify-content:space-between;}
@@ -57,17 +57,36 @@ $activeNav = 'profile';
     border-radius:16px;
     padding:6px 16px;
     margin-bottom:22px;
+    box-shadow: 0 4px 5px rgba(0,0,0,0.14), 0 6px 10px rgba(0,0,0,0.12);
   }
   .info-row{
     display:flex;align-items:center;gap:12px;
-    padding:13px 0;border-bottom:1px solid #eef2ef;
+    padding:13px 0;border-bottom:1px solid var(--border);
   }
   .info-row:last-child{border-bottom:none;}
   .info-icon{
-    width:34px;height:34px;border-radius:50%;
-    background:var(--primary-light);color:var(--green);
-    display:flex;align-items:center;justify-content:center;
-    font-size:15px;flex-shrink:0;
+    width:34px;
+    height:34px;
+    min-width:34px;
+    min-height:34px;
+    flex:0 0 34px;
+    border-radius:50%;
+    background:var(--primary-light);
+    color:var(--green);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:15px;
+    line-height:1;
+    overflow:hidden;
+  }
+  .info-icon svg{
+    width:18px !important;
+    height:18px !important;
+    max-width:18px;
+    max-height:18px;
+    display:block;
+    flex:0 0 18px;
   }
   .info-text .info-label{font-size:11px;color:var(--text-muted);margin-bottom:2px;}
   .info-text .info-value{font-size:13.5px;font-weight:600;color:var(--text-main);}
@@ -78,22 +97,58 @@ $activeNav = 'profile';
   body{transition:background .5s ease;}
 
   .theme-row{
-    display:flex;align-items:center;justify-content:space-between;
-    padding:14px 4px;margin-bottom:8px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:10px 4px 12px;
+    margin-bottom:8px;
   }
-  .theme-row .t-left{display:flex;align-items:center;gap:12px;}
-  .theme-row .si-icon{
-    width:36px;height:36px;border-radius:10px;
-    background:var(--primary-light);color:var(--green);
-    display:flex;align-items:center;justify-content:center;font-size:15px;
+  .theme-label{
+    font-size:13px;
+    font-weight:600;
+    color:var(--text-main);
+    line-height:1.1;
   }
-  .theme-row .si-label{font-size:14px;font-weight:600;}
-  .scene{width:52px;height:26px;border-radius:16px;position:relative;overflow:hidden;cursor:pointer;border:1.5px solid rgba(0,0,0,0.08);transition:all .5s ease;}
+  .theme-control{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .theme-state{
+    min-width:22px;
+    text-align:right;
+    font-size:10px;
+    font-weight:700;
+    color:var(--text-muted);
+    letter-spacing:.3px;
+  }
+  .scene{
+    width:46px;
+    height:24px;
+    border-radius:14px;
+    position:relative;
+    overflow:hidden;
+    cursor:pointer;
+    border:1px solid rgba(0,0,0,0.10);
+    transition:all .25s ease;
+    flex:0 0 46px;
+  }
   .scene.day{background:linear-gradient(180deg,#5bc8f5 0%,#a8dffa 100%);}
   .scene.night{background:linear-gradient(180deg,#0d1b3e 0%,#1a2e6e 100%);}
-  .knob{position:absolute;top:3px;width:20px;height:20px;border-radius:50%;transition:all .5s cubic-bezier(.4,0,.2,1);}
+  .knob{
+    position:absolute;
+    top:2px;
+    left:3px;
+    width:18px;
+    height:18px;
+    border-radius:50%;
+    transition:all .25s cubic-bezier(.4,0,.2,1);
+  }
   .knob.day{left:3px;background:radial-gradient(circle at 35% 35%,#ffe066,#f5c518);}
-  .knob.night{left:29px;background:radial-gradient(circle at 38% 30%,#d0d8f0,#9aa8c8);}
+  .knob.night{left:25px;background:radial-gradient(circle at 38% 30%,#d0d8f0,#9aa8c8);}
 </style>
 </head>
 <body class="<?= $isDark ? 'dark-bg' : 'light-bg' ?>">
@@ -171,7 +226,8 @@ $activeNav = 'profile';
 </div>
         <div class="info-text">
           <div class="info-label">Address</div>
-          <div class="info-value"><?= htmlspecialchars(($user['registry_barangay'] ?: 'Manolo Fortich') . ', Bukidnon') ?></div>
+          <?php $displayBarangay = $user['barangay'] ?: $user['registry_barangay']; ?>
+          <div class="info-value"><?= htmlspecialchars(($displayBarangay ? $displayBarangay . ', ' : '') . 'Manolo Fortich, Bukidnon') ?></div>
         </div>
       </div>
       <div class="info-row status">
@@ -184,12 +240,11 @@ $activeNav = 'profile';
     </div>
 
     <div class="theme-row">
-      <div class="t-left">
-        <div class="si-icon">🌗</div>
-        <div class="si-label">Dark Mode</div>
-      </div>
-      <div class="scene <?= $isDark ? 'night' : 'day' ?>" id="scene" onclick="toggleDark()">
-        <div class="knob <?= $isDark ? 'night' : 'day' ?>" id="knob"></div>
+      <div class="theme-control" onclick="toggleDark()" role="button" tabindex="0" aria-label="Toggle dark mode">
+        <span class="theme-state" id="themeState"><?= $isDark ? 'ON' : 'OFF' ?></span>
+        <div class="scene <?= $isDark ? 'night' : 'day' ?>" id="scene">
+          <div class="knob <?= $isDark ? 'night' : 'day' ?>" id="knob"></div>
+        </div>
       </div>
     </div>
 
@@ -207,10 +262,12 @@ function toggleDark() {
   dark = !dark;
   const scene = document.getElementById('scene');
   const knob = document.getElementById('knob');
+  const themeState = document.getElementById('themeState');
 
   scene.className = 'scene ' + (dark ? 'night' : 'day');
   knob.className = 'knob ' + (dark ? 'night' : 'day');
   document.body.className = dark ? 'dark-bg' : 'light-bg';
+  themeState.textContent = dark ? 'ON' : 'OFF';
 
   fetch('../settings/update-settings.php', {
     method: 'POST',
@@ -218,6 +275,13 @@ function toggleDark() {
     body: 'dark_mode=' + (dark ? 1 : 0)
   });
 }
+
+document.querySelector('.theme-control')?.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    toggleDark();
+  }
+});
 </script>
 
 

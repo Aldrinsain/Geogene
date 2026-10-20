@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/account-status.php';
 
 // ---------- APPROVE / REJECT ACTIONS ----------
 if (isset($_GET['approve'])) {
@@ -9,7 +10,7 @@ if (isset($_GET['approve'])) {
     exit;
 }
 if (isset($_GET['reject'])) {
-    $pdo->prepare("UPDATE users SET identity_verified = 0, status = 'suspended' WHERE user_id = ?")->execute([(int) $_GET['reject']]);
+    $pdo->prepare("UPDATE users SET identity_verified = 0, status = '" . GEOGENE_DB_DISABLED . "' WHERE user_id = ? AND role = 'user'")->execute([(int) $_GET['reject']]);
     header('Location: verification-monitoring.php');
     exit;
 }
@@ -58,7 +59,7 @@ require_once __DIR__ . '/includes/staff-header.php';
         <tr>
           <td><?= htmlspecialchars($u['full_name']) ?></td>
           <td><?= htmlspecialchars($u['email']) ?></td>
-          <td><span class="badge <?= $u['status'] === 'active' ? 'green' : ($u['status'] === 'suspended' ? 'red' : 'orange') ?>"><?= ucfirst($u['status']) ?></span></td>
+          <td><span class="badge <?= geogene_account_badge_class($u['status']) ?>"><?= geogene_account_status_label($u['status']) ?></span></td>
           <td>
             <?php if ($u['identity_verified']): ?>
               <span class="badge green">✔ Verified</span>
@@ -70,7 +71,7 @@ require_once __DIR__ . '/includes/staff-header.php';
           <td>
             <?php if (!$u['identity_verified']): ?>
               <a href="?approve=<?= $u['user_id'] ?>" class="icon-btn" title="Approve">✅</a>
-              <a href="?reject=<?= $u['user_id'] ?>" class="icon-btn danger" title="Reject" onclick="return confirm('Are you sure you want to reject/suspend this user?');">✕</a>
+              <a href="?reject=<?= $u['user_id'] ?>" class="icon-btn danger" title="Reject" onclick="return confirm('Are you sure you want to reject and disable this user?');">✕</a>
             <?php else: ?>
               <span style="color:var(--text-muted);font-size:11px;">—</span>
             <?php endif; ?>

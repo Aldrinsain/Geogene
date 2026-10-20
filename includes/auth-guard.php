@@ -13,12 +13,21 @@ if (!isset($_SESSION['user_id'])) {
 // session. Citizens (role='user') and MCRO staff (role='office_head'/'admin')
 // are separate accounts and must never share access between the two portals.
 require_once __DIR__ . '/../config/db.php';
-$stmt = $pdo->prepare("SELECT user_id FROM users WHERE user_id = ? AND role = 'user'");
+require_once __DIR__ . '/../config/account-status.php';
+$stmt = $pdo->prepare("SELECT user_id, status FROM users WHERE user_id = ? AND role = 'user'");
 $stmt->execute([$_SESSION['user_id']]);
-if (!$stmt->fetch()) {
+$guardRow = $stmt->fetch();
+if (!$guardRow) {
     session_unset();
     session_destroy();
     header('Location: ../auth/login.php?expired=1');
+    exit;
+}
+// Disabled while logged in -> log them out right away.
+if (geogene_account_is_disabled($guardRow['status'])) {
+    session_unset();
+    session_destroy();
+    header('Location: ../auth/login.php?disabled=1');
     exit;
 }
 

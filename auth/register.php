@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../staff/includes/name-format.php';   // shared name rules (Given Middle Surname, Mixed Case)
 
 // I-require nga naa nay na-verify nga MCRO record gikan sa Search Full Name step
 if (isset($_GET['record_id'])) {
@@ -11,29 +12,29 @@ if (empty($_SESSION['matched_record_id'])) {
     exit;
 }
 $matchedRecordId = $_SESSION['matched_record_id'];
-$suggestedName = $_GET['name'] ?? ($_SESSION['search_full_name'] ?? '');
+$suggestedName = gg_display_name($_GET['name'] ?? ($_SESSION['search_full_name'] ?? ''));
 
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fullName = trim($_POST['full_name'] ?? '');
+    $fullName = gg_display_name(trim($_POST['full_name'] ?? ''));   // "Given Middle Surname", Mixed Case
     $email    = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirm  = $_POST['confirm_password'] ?? '';
 
     if ($fullName === '' || $email === '' || $password === '') {
-        $error = 'Palihug pun-a ang tanan nga fields.';
+        $error = 'Please fill in all fields.';
     } elseif ($password !== $confirm) {
-        $error = 'Dili magtugma ang password ug confirm password.';
+        $error = 'Password and confirm password do not match.';
     } elseif (strlen($password) < 8) {
-        $error = 'Ang password dapat at least 8 characters.';
+        $error = 'Password must be at least 8 characters.';
     } else {
         // Check kung naa nay account sa email
         $stmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ?");
         $stmt->execute([$email]);
 
         if ($stmt->fetch()) {
-            $error = 'Naay account na nga naka-register ani nga email.';
+            $error = 'An account is already registered with this email.';
         } else {
             $hash = password_hash($password, PASSWORD_BCRYPT);
 
@@ -81,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene - Register Account</title>
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../assets/css/main.css?v=3">
 </head>
 <body>
 
@@ -144,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <p class="footer-text">Already have an account? <a href="login.php">Login</a></p>
 </div>
+
 <script>
 function togglePw(id, el) {
   const input = document.getElementById(id);
