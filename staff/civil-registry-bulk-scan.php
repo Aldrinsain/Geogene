@@ -44,7 +44,7 @@ require_once __DIR__ . '/includes/staff-header.php';
      server to shell out to Tesseract on every one of possibly dozens of
      full-resolution photos one at a time. See assets/js/cert-ocr-client.js. -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="assets/js/cert-ocr-client.js"></script>
+<script src="assets/js/cert-ocr-client.js?v=<?= (int) @filemtime(__DIR__ . '/assets/js/cert-ocr-client.js') ?>"></script>
 
 <div class="panel">
   <div class="form-row">
@@ -337,6 +337,39 @@ require_once __DIR__ . '/includes/staff-header.php';
   // doesn't apply to the new type is simply left out of what gets saved).
   typeSelect.addEventListener('change', function () { rerenderAll(); saveDraft(); });
 
+  // Words that are printed form labels, never part of a person's name.
+  var FORM_LABEL_WORDS = /^(first|middle|middie|last|name|maiden|sex|date|birth)$/i;
+
+  /** Light, generic cleanup of an OCR'd person name: keeps every letter (José, Peña, Núñez),
+   *  hyphens, apostrophes and periods; drops stray symbols/digits, commas and tokens that are
+   *  just form labels ("First Middle Last"). No word blacklist, so real names are not touched. */
+  function cleanName(s) {
+    if (!s) return '';
+    var words = String(s)
+      .replace(/[^\p{L}\s.'’\-]/gu, ' ')
+      .replace(/,/g, ' ')
+      .split(/\s+/)
+      .filter(function (w) { return /\p{L}/u.test(w) && !FORM_LABEL_WORDS.test(w.replace(/[^\p{L}]/gu, '')); });
+    return words.join(' ');
+  }
+
+  function nameWordCount(v) {
+    return String(v || '').split(/\s+/).filter(function (w) { return /\p{L}{2,}/u.test(w); }).length;
+  }
+
+  /** "✓ Scanned" only if the key fields are really filled in; otherwise say exactly what to check. */
+  function scanStatus(f, type) {
+    var missing = [];
+    if (!f.registry_number) missing.push('Registry No.');
+    if (nameWordCount(f.person_name) < 2) missing.push('Name');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date_of_event || '')) missing.push('Date');
+    if (type === 'birth') {
+      if (nameWordCount(f.mother_name) < 2) missing.push('Mother');
+      if (nameWordCount(f.father_name) < 2) missing.push('Father');
+    }
+    return missing.length ? '⚠ Check: ' + missing.join(', ') : '✓ Scanned';
+  }
+
   /** Scans ONE photo (client OCR -> upload+extract) and resolves once its
    *  row is fully updated - used by the CONCURRENCY-wide runner below. */
   function scanOnePhoto(file) {
@@ -350,28 +383,34 @@ require_once __DIR__ . '/includes/staff-header.php';
     // and running alongside up to CONCURRENCY-1 other photos at the same
     // time) so the server almost never has to run its own, much slower,
     // full-resolution Tesseract pass on every photo in the batch.
-    return window.CertOcrClient.recognize([file], function (pct) {
+    // recognizeDetailed() also tells us whether the browser actually read
+    // anything usable (and does a 2nd, enhanced pass on hard photos).
+    // Falls back to recognize() if an older cached copy of the JS is loaded.
+    var ocrPromise = window.CertOcrClient.recognizeDetailed
+      ? window.CertOcrClient.recognizeDetailed([file], onOcrProgress)
+      : window.CertOcrClient.recognize([file], onOcrProgress).then(function (t) { return { text: t, usable: !!t }; });
+
+    function onOcrProgress(pct, phase) {
       var statusDiv = document.getElementById('bulkstatus-' + id);
-      if (statusDiv) statusDiv.textContent = 'Reading in the browser... ' + pct + '%';
-    }).then(function (clientText) {
+      if (statusDiv) {
+        statusDiv.textContent = (phase === 'enhancing' ? 'Poor photo - enhancing... ' : 'Reading in the browser... ') + pct + '%';
+      }
+    }
+
+    return ocrPromise.then(function (ocr) {
       var statusDiv = document.getElementById('bulkstatus-' + id);
       if (statusDiv) statusDiv.textContent = 'Uploading...';
-
-      // TEMPORARY DEBUG
-      console.log('=== BULK SCAN RAW OCR TEXT ===');
-      console.log(clientText);
-      console.log('=== END RAW OCR TEXT ===');
 
       var fd = new FormData();
       fd.append('side', 'front');
       fd.append('registry_type', currentType());
       fd.append('certificate_image', file);
-      
-      // KUNG ANG BROWSER OCR NAGBASA OG GARBAGE (sama sa "DAC! 1H"), AYAW I-PASA.
-      // Pabay-i ang Server OCR (PHP Tesseract) nga mobasa kay mas maayo siya kung naay watermark.
-      // Ang "DAC" kay klaro kaayo nga garbage gikan sa linya sa papel.
-      if (clientText) {
-          fd.append('ocr_text_client', clientText);
+
+      // Only hand the server the browser's text if the browser really read
+      // something (enough high-confidence words). If it read next to nothing,
+      // sending it would only stop the server's own OCR from trying.
+      if (ocr && ocr.usable && ocr.text) {
+        fd.append('ocr_text_client', ocr.text);
       }
 
       return fetch('civil-registry-scan-inline.php', { method: 'POST', body: fd });
@@ -382,34 +421,16 @@ require_once __DIR__ . '/includes/staff-header.php';
         if (data && data.ok) {
           var legacy = data.legacy || {};
           var common = data.common || {};
-          // --- FRONT-END CLEANUP PARA LIMPYO TAN-AWON BISAN NAAY SAYOP ANG OCR ---
-          
-          // Tangtanga ang "aas FR", "Bl", "aas" sa petsa
-          var cleanDate = (common.date_prepared || '').replace(/\b(Bl|aas|FR|CH)\b/gi, '').replace(/\s+/g, ' ').trim();
-
-          // Ayuhon ang kilid sa barangay (B ug D kasagaran mabasa as 3 ug I)
-          var cleanBrgy = (common.barangay || '')
-              .replace(/\b3rgy\b/gi, 'Brgy')
-              .replace(/\bIcklum\b/gi, 'Dicklum') 
-              .replace(/\bBrgv\b/gi, 'Brgy')
-              .replace(/\bPuro\s+(\d+)\b/gi, 'Puro $1');
-
+          // The server already normalizes dates (yyyy-mm-dd when readable) and maps the
+          // barangay to the official spelling, so those are used as-is - no scan-specific
+          // text patches here (the old ones, e.g. 'hedge', 'Icklum', also mangled real names).
           row.fields.registry_number = common.registry_number || '';
           row.fields.page_no = common.page_no || '';
-          row.fields.date_prepared = cleanDate;
-          row.fields.city_municipality = common.city_municipality || '';   
-          row.fields.barangay = cleanBrgy;
+          row.fields.date_prepared = (common.date_prepared || '').trim();
+          row.fields.city_municipality = common.city_municipality || '';
+          row.fields.barangay = common.barangay || '';
           row.fields.date_of_event = legacy.date_of_event || '';
-          // Tangtanga ang mga sampinit sa kilid kung naa man gani
-          var cleanName = function(s) { 
-              if (!s) return '';
-              // Tangtanga ang garbage characters nga gikan sa OCR (sama sa ], !, 1H)
-              var clean = String(s).replace(/[^A-Za-zÑñ\s\.\-,]/g, ' '); 
-              clean = clean.replace(/\b(es|a|f|gg|hedge|ih|1h)\b/gi, '');
-              clean = clean.replace(/,\s*/g, ' ');
-              return clean.replace(/\s+/g, ' ').trim(); 
-          };
-          
+
           row.fields.person_name = [legacy.first_name, legacy.middle_name, legacy.last_name]
             .map(cleanName)
             .filter(function (v) { return v !== ''; }).join(' ');
@@ -425,7 +446,9 @@ require_once __DIR__ . '/includes/staff-header.php';
           row.image_path = data.image_path || '';
           row.certificate_data = JSON.stringify(data.cert_fields || {});
           // update the status shown in the review table too (it used to stay on "Waiting..." after a successful scan)
-          row.status = row.fields.registry_number ? '✓ Scanned' : '⚠ Check fields';
+          row.status = data.warning && !row.fields.registry_number && !row.fields.person_name
+            ? '⚠ Nothing could be read - fill in manually'
+            : scanStatus(row.fields, currentType());
           if (statusDiv) statusDiv.textContent = row.status;
           rerenderAll();
           saveDraft(); // this row is now fully uploaded+scanned - safe to persist

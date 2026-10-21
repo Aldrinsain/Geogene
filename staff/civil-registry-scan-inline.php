@@ -239,6 +239,11 @@ $normalizeDate = function (?string $v): ?string {
     $v = trim((string) $v);
     if ($v === '') return null;
     $ts = strtotime($v);
+    // OCR often glues stray characters to a good date ("June 16, 2008 Bi,") - pull out the
+    // date-looking part ("Month D, YYYY" or "D Month YYYY") and try again.
+    if (!$ts && preg_match('/\b[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}\b/', $v, $m)) {
+        $ts = strtotime($m[0]);
+    }
     return $ts ? date('Y-m-d', $ts) : null;
 };
 if (!empty($legacy['date_of_event'])) {

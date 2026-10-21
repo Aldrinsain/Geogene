@@ -842,6 +842,14 @@ if (!function_exists('cert_name_row_to_parts')) {
         // Ilisdan nato ang mga symbol sama sa ®, », :, -, _, numbers og space
         $raw = preg_replace('/[^A-Za-zÑñ\s]/u', ' ', $raw);
 
+        // 1b. Ang printed labels sa form (First/Middle/Last, "Population Reference No.",
+        //     etc.) DILI ngalan. Kung ang unang label wala mahimo nga value row, kini ang
+        //     nagpahinabo sa "First Middie Last" isip ngalan sa bata/amahan.
+        //     - cut: ang pulong sa laing box/column - tangtangon ang pulong ug ang tanan human niini
+        //     - drop: ang label sa ngalan mismo (First/Middle/Last/Name) - tangtangon ang pulong ra
+        $raw = preg_split('/\b(?:POPULATION|REFERENCE|OCRG|DATE|SEX|CITIZENSHIP|RELIGION|OCCUPATION|RESIDENCE|SIGNATURE)\b/i', $raw)[0];
+        $raw = preg_replace('/\b(?:FIRST|FIRSY|FRST|MIDDLE|MIDDIE|MIDDLF|MIDDLEE|LAST|NAME)\b/i', ' ', $raw);
+
         // 2. Tangtanga ang mga 1-2 letters nga nag-inusara (sama sa "es", "a", "F", "Ry", "Bs", "Ue")
         $raw = preg_replace('/\b[a-zA-Z]{1,2}\b/', ' ', $raw);
 
@@ -1204,13 +1212,15 @@ if (!function_exists('cert_auto_extract_birth')) {
                 if (strlen($line) < 8) continue;
                 
                 // Ayaw dawata kung naay label/lugar
-                if (preg_match('/\b(DATE|SEX|BIRTH|CITIZEN|RELIGION|ADDRESS|RESIDENCE|OCCUPATION|MARRIAGE|ATTENDANT|INFORMANT|REGISTRAR|SIGNATURE|CLERK|PHYSICIAN|HOSPITAL|PROVINCE|CITY|MUNICIPALITY|BARANGAY|REGISTRY|PAGE|BOOK|NO\.|FIRST|MIDDLE|LAST|DICKLUM|ILOILO|BUKIDNON|MANOLO|FORTICH|PHILIPPINES|PLACE|SCHOOL|UNIVERSITY|COLLEGE|DOC|DOCUMENT|FORM|REPUBLIC|SAN DIEGO|LEMERY|LENY|ASST|MOTHER|FATHER|MALE|FEMALE|SINGLE|MARRIED)\b/i', $line)) continue;
+                if (preg_match('/\b(DATE|SEX|BIRTH|CITIZEN|RELIGION|ADDRESS|RESIDENCE|OCCUPATION|MARRIAGE|ATTENDANT|INFORMANT|REGISTRAR|SIGNATURE|CLERK|PHYSICIAN|HOSPITAL|PROVINCE|CITY|MUNICIPALITY|BARANGAY|REGISTRY|PAGE|BOOK|NO\.|FIRST|MIDDLE|LAST|DICKLUM|ILOILO|BUKIDNON|MANOLO|FORTICH|PHILIPPINES|PLACE|SCHOOL|UNIVERSITY|COLLEGE|DOC|DOCUMENT|FORM|REPUBLIC|SAN DIEGO|LEMERY|LENY|ASST|MOTHER|FATHER|MALE|FEMALE|SINGLE|MARRIED|THE|OF|AND|THIS|THAT|WHO|WAS|ARE|NOT|FOR|WITH|DELIVERY|INCLUDING|BORN|ALIVE|CERTIFY|TIME|AGE|NUMBER|CHILDREN|TOTAL|WEIGHT|ORDER|TYPE|TWIN|TRIPLET|OTHERS|SPECIFY|GRAMS|SECOND|THIRD|STILL|LIVING|DEAD|NOW|POPULATION|REFERENCE)\b/i', $line)) continue;
                 
                 if (preg_match('/[0-9]/', $line)) continue;
 
                 $cleanLine = preg_replace('/[^A-Za-zÑñ\s]/u', ' ', $line);
                 $words = array_values(array_filter(preg_split('/\s+/', trim($cleanLine)), fn($w) => $w !== ''));
-                
+                // Ang 1-2 ka letra nga stray ("M Bs MAYLADE BALONGA PILOTON") dili ihapon - gitangtang gihapon sila sa cert_name_row_to_parts
+                $words = array_values(array_filter($words, fn($w) => strlen($w) >= 3 || in_array(strtoupper($w), ['JR', 'SR'], true)));
+
                 if (count($words) >= 2 && count($words) <= 4) {
                     $isValid = true;
                     foreach ($words as $w) {
@@ -1230,9 +1240,13 @@ if (!function_exists('cert_auto_extract_birth')) {
         $childRow = cert_extract_value_row($childSeg, ['1. NAME', 'NAME OF CHILD', '4. NAME']);
         [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = cert_name_row_to_parts($childRow);
 
-        // Kung ni-fail ang label, gamita ang Fallback (kadtong natarong na)
-        if ($fields['child_first'] === '') {
-            [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = $findFallbackName($childSeg);
+        // Kung ni-fail ang label (walay pulong, o usa ra ka pulong nga walay apelyido), gamita ang Fallback
+        $nameIncomplete = fn(string $first, string $last): bool => $first === '' || $last === '';
+        if ($nameIncomplete($fields['child_first'], $fields['child_last'])) {
+            $fb = $findFallbackName($childSeg);
+            if (!$nameIncomplete($fb[0], $fb[2]) || $fields['child_first'] === '') {
+                [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = $fb;
+            }
         }
 
         // --- SEX and DATE OF BIRTH ---
@@ -1257,9 +1271,12 @@ if (!function_exists('cert_auto_extract_birth')) {
             $mRow = cert_extract_value_row($motherSeg, ['MAIDEN NAME', '7. MAIDEN', 'MAIDEN']);
             [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = cert_name_row_to_parts($mRow);
 
-            if ($fields['mother_first'] === '') {
+            if ($nameIncomplete($fields['mother_first'], $fields['mother_last'])) {
                 $exclude = [$fields['child_first'], $fields['child_last']];
-                [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = $findFallbackName($motherSeg, $exclude);
+                $fb = $findFallbackName($motherSeg, $exclude);
+                if (!$nameIncomplete($fb[0], $fb[2]) || $fields['mother_first'] === '') {
+                    [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = $fb;
+                }
             }
         }
 
@@ -1268,9 +1285,12 @@ if (!function_exists('cert_auto_extract_birth')) {
             $fRow = cert_extract_value_row($fatherSeg, ['13. NAME', '14. NAME', 'NAME OF FATHER']);
             [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = cert_name_row_to_parts($fRow);
 
-            if ($fields['father_first'] === '') {
+            if ($nameIncomplete($fields['father_first'], $fields['father_last'])) {
                 $exclude = [$fields['child_first'], $fields['child_last'], $fields['mother_first'], $fields['mother_last']];
-                [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = $findFallbackName($fatherSeg, $exclude);
+                $fb = $findFallbackName($fatherSeg, $exclude);
+                if (!$nameIncomplete($fb[0], $fb[2]) || $fields['father_first'] === '') {
+                    [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = $fb;
+                }
             }
         }
 
