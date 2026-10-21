@@ -1173,77 +1173,70 @@ if (!function_exists('cert_auto_extract')) {
 if (!function_exists('cert_auto_extract_birth')) {
     function cert_auto_extract_birth(string $ocrText, array $common): array
     {
+        // 1. Ibalik nato ang Sections (Kadtong original nimo nga natarong)
+        $sections = cert_segment_sections($ocrText, [
+            'child'      => ['1. NAME', 'NAME OF CHILD', '4. NAME', '2. NAME'],
+            'mother'     => ['6. MAIDEN', 'MAIDEN NAME', '7. MAIDEN', 'MAIDEN'],
+            'father'     => ['13. NAME', '14. NAME', 'NAME OF FATHER', 'FATHER'],
+            'marriage'   => ['18. DATE AND PLACE OF MARRIAGE', 'MARRIAGE OF PARENTS'],
+            'attendant'  => ['19A. ATTENDANT', '19. ATTENDANT', 'ATTENDANT'],
+            'informant'  => ['20. INFORMANT', 'CERTIFICATION OF INFORMANT'],
+            'prepared'   => ['21. PREPARED BY', '21 PREPARED BY', 'PREPARED BY'],
+            'remarks'    => ['REMARKS'],
+        ]);
+        
+        $childSeg    = $sections['child']     ?? $ocrText;
+        $motherSeg   = $sections['mother']    ?? '';
+        $fatherSeg   = $sections['father']    ?? '';
+        $marriageSeg = $sections['marriage']  ?? '';
+        $attendSeg   = $sections['attendant'] ?? '';
+        $informSeg   = $sections['informant'] ?? '';
+        $prepSeg     = $sections['prepared']  ?? '';
+        $remarksSeg  = $sections['remarks']   ?? '';
+
         $fields = $common;
-        $lines = preg_split('/\r\n|\r|\n/', $ocrText);
-        $totalLines = count($lines);
 
-        // =====================================================================
-        // 1. ANG SMART CANDIDATE SCANNER (Dili mobalik sa sayop nga lugar)
-        // =====================================================================
-        $candidateNames = [];
-        foreach ($lines as $index => $line) {
-            $line = trim($line);
-            if (strlen($line) < 7) continue;
-            
-            // I-EXCLUDE ANG MGA KLARO NGA LABEL, LUGAR, UG UBAN PA
-            if (preg_match('/\b(DATE|SEX|BIRTH|CITIZEN|RELIGION|ADDRESS|RESIDENCE|OCCUPATION|MARRIAGE|ATTENDANT|INFORMANT|REGISTRAR|SIGNATURE|CLERK|PHYSICIAN|HOSPITAL|PROVINCE|CITY|MUNICIPALITY|BARANGAY|REGISTRY|PAGE|BOOK|NO\.|FIRST|MIDDLE|LAST|DICKLUM|ILOILO|BUKIDNON|MANOLO|FORTICH|PHILIPPINES|PLACE|SCHOOL|UNIVERSITY|COLLEGE|DOC|DOCUMENT|FORM|REPUBLIC|SAN DIEGO|LEMERY|LENY|ASST|MOTHER|FATHER|MALE|FEMALE|SINGLE|MARRIED)\b/i', $line)) continue;
-            
-            if (preg_match('/[0-9]/', $line)) continue;
+        // 2. Helper para sa Fallback niadtong Iloilo nga papel nga naay "Rene"
+        $findFallbackName = function($textSeg, $excludeWords = []) {
+            $lines = preg_split('/\r\n|\r|\n/', $textSeg);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (strlen($line) < 8) continue;
+                
+                // Ayaw dawata kung naay label/lugar
+                if (preg_match('/\b(DATE|SEX|BIRTH|CITIZEN|RELIGION|ADDRESS|RESIDENCE|OCCUPATION|MARRIAGE|ATTENDANT|INFORMANT|REGISTRAR|SIGNATURE|CLERK|PHYSICIAN|HOSPITAL|PROVINCE|CITY|MUNICIPALITY|BARANGAY|REGISTRY|PAGE|BOOK|NO\.|FIRST|MIDDLE|LAST|DICKLUM|ILOILO|BUKIDNON|MANOLO|FORTICH|PHILIPPINES|PLACE|SCHOOL|UNIVERSITY|COLLEGE|DOC|DOCUMENT|FORM|REPUBLIC|SAN DIEGO|LEMERY|LENY|ASST|MOTHER|FATHER|MALE|FEMALE|SINGLE|MARRIED)\b/i', $line)) continue;
+                
+                if (preg_match('/[0-9]/', $line)) continue;
 
-            $cleanLine = preg_replace('/[^A-Za-zÑñ\s]/u', ' ', $line);
-            $words = array_values(array_filter(preg_split('/\s+/', trim($cleanLine)), fn($w) => $w !== ''));
-            
-            if (count($words) >= 2 && count($words) <= 4) {
-                $isValid = true;
-                foreach ($words as $w) {
-                    if (strlen($w) > 2 && !preg_match('/[aeiouy]/i', $w)) { $isValid = false; break; }
-                }
-                if ($isValid) {
-                    $parsed = cert_name_row_to_parts($words);
-                    if ($parsed[0] !== '') {
-                        $candidateNames[] = [
-                            'index' => $index,
-                            'parsed' => $parsed
-                        ];
+                $cleanLine = preg_replace('/[^A-Za-zÑñ\s]/u', ' ', $line);
+                $words = array_values(array_filter(preg_split('/\s+/', trim($cleanLine)), fn($w) => $w !== ''));
+                
+                if (count($words) >= 2 && count($words) <= 4) {
+                    $isValid = true;
+                    foreach ($words as $w) {
+                        if (strlen($w) > 2 && !preg_match('/[aeiouy]/i', $w)) { $isValid = false; break; }
+                        if (in_array(strtoupper($w), $excludeWords)) { $isValid = false; break; }
+                    }
+                    if ($isValid) {
+                        $parsed = cert_name_row_to_parts($words);
+                        if ($parsed[0] !== '') return $parsed;
                     }
                 }
             }
+            return ['', '', ''];
+        };
+
+        // --- CHILD ---
+        $childRow = cert_extract_value_row($childSeg, ['1. NAME', 'NAME OF CHILD', '4. NAME']);
+        [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = cert_name_row_to_parts($childRow);
+
+        // Kung ni-fail ang label, gamita ang Fallback (kadtong natarong na)
+        if ($fields['child_first'] === '') {
+            [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = $findFallbackName($childSeg);
         }
 
-        // I-sort gikan sa taas ngadto sa ubos sa papel
-        usort($candidateNames, fn($a, $b) => $a['index'] <=> $b['index']);
-
-        // =====================================================================
-        // 2. ANG TAG-ISA KA ASSIGNMENT (Gamit ang saktong posisyon)
-        // =====================================================================
-        $childName = ['', '', ''];
-        $motherName = ['', '', ''];
-        $fatherName = ['', '', ''];
-
-        // 2a. Pangitaa ang Child (Kanang naa sa taas, una sa listahan)
-        if (isset($candidateNames[0])) {
-            $childName = $candidateNames[0]['parsed'];
-        }
-
-        // 2b. Pangitaa ang Mother ug Father (Kanang naa sa tunga ug ubos)
-        if (count($candidateNames) >= 3) {
-            // Kay 3 o daghan pa, ang ikaduha kay Mother, ug ang ikatulo kay Father
-            $motherName = $candidateNames[1]['parsed'];
-            $fatherName = $candidateNames[2]['parsed'];
-        } elseif (count($candidateNames) == 2) {
-            // Kung 2 ra, dayonon nato assign ang ikaduha sa Mother (kay ang Father kuwang)
-            $motherName = $candidateNames[1]['parsed'];
-        }
-
-        // I-save sa fields (Ayaw na usba)
-        [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = $childName;
-        [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = $motherName;
-        [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = $fatherName;
-
-        // =====================================================================
-        // 3. SEX, DATE OF BIRTH, UG UBAN PA (Parehas sa original)
-        // =====================================================================
-        $sexDobRow = cert_extract_value_row($ocrText, ['SEX']);
+        // --- SEX and DATE OF BIRTH ---
+        $sexDobRow = cert_extract_value_row($childSeg, ['SEX']);
         if (count($sexDobRow) >= 4) {
             $fields['child_sex'] = $sexDobRow[0];
             $fields['date_of_birth'] = trim($sexDobRow[2] . ' ' . $sexDobRow[1] . ', ' . $sexDobRow[3]);
@@ -1251,78 +1244,125 @@ if (!function_exists('cert_auto_extract_birth')) {
             $fields['child_sex'] = $sexDobRow[0];
         }
         if (!preg_match('/^(MALE|FEMALE)$/i', trim((string) ($fields['child_sex'] ?? '')))) $fields['child_sex'] = '';
-        if (empty($fields['child_sex'])) $fields['child_sex'] = cert_extract_value_after_label($ocrText, ['SEX']);
-        if (empty($fields['date_of_birth'])) $fields['date_of_birth'] = cert_extract_value_after_label($ocrText, ['DATE OF BIRTH']);
-        if (empty(trim((string) $fields['child_sex']))) $fields['child_sex'] = cert_find_sex_in($ocrText);
+        if (empty($fields['child_sex'])) $fields['child_sex'] = cert_extract_value_after_label($childSeg, ['SEX']);
+        if (empty($fields['date_of_birth'])) $fields['date_of_birth'] = cert_extract_value_after_label($childSeg, ['DATE OF BIRTH']);
+        if (empty(trim((string) $fields['child_sex']))) $fields['child_sex'] = cert_find_sex_in($childSeg);
         if (empty(trim((string) ($fields['date_of_birth'] ?? ''))) || !strtotime((string) $fields['date_of_birth'])) {
-            $found = cert_find_date_in($ocrText);
+            $found = cert_find_date_in($childSeg);
             if ($found !== '') $fields['date_of_birth'] = $found;
         }
 
-        $pobRow = cert_extract_value_row($ocrText, ['PLACE OF BIRTH', 'PLACE OF']);
+        // --- MOTHER ---
+        if ($motherSeg !== '') {
+            $mRow = cert_extract_value_row($motherSeg, ['MAIDEN NAME', '7. MAIDEN', 'MAIDEN']);
+            [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = cert_name_row_to_parts($mRow);
+
+            if ($fields['mother_first'] === '') {
+                $exclude = [$fields['child_first'], $fields['child_last']];
+                [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = $findFallbackName($motherSeg, $exclude);
+            }
+        }
+
+        // --- FATHER ---
+        if ($fatherSeg !== '') {
+            $fRow = cert_extract_value_row($fatherSeg, ['13. NAME', '14. NAME', 'NAME OF FATHER']);
+            [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = cert_name_row_to_parts($fRow);
+
+            if ($fields['father_first'] === '') {
+                $exclude = [$fields['child_first'], $fields['child_last'], $fields['mother_first'], $fields['mother_last']];
+                [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = $findFallbackName($fatherSeg, $exclude);
+            }
+        }
+
+        // --- PLACE OF BIRTH ---
+        $pobRow = cert_extract_value_row($childSeg, ['PLACE OF BIRTH', 'PLACE OF']);
         if (count($pobRow) >= 1) $fields['place_of_birth_hospital'] = $pobRow[0] ?? '';
         if (count($pobRow) >= 2) $fields['place_of_birth_city']     = $pobRow[1] ?? '';
         if (count($pobRow) >= 3) $fields['place_of_birth_province'] = $pobRow[2] ?? '';
 
-        $typeRow = cert_extract_value_row($ocrText, ['TYPE OF BIRTH']);
+        // --- TYPE OF BIRTH ---
+        $typeRow = cert_extract_value_row($childSeg, ['TYPE OF BIRTH']);
         if (count($typeRow) >= 4) {
             [$fields['type_of_birth'], $fields['birth_order'], $fields['birth_order_overall'], $fields['birth_weight']] = $typeRow;
         } else {
             if (!empty($typeRow[0])) $fields['type_of_birth'] = $typeRow[0];
-            $fields['birth_weight'] = $fields['birth_weight'] ?? cert_extract_value_after_label($ocrText, ['WEIGHT AT BIRTH', 'WEIGHT']);
+            $fields['birth_weight'] = $fields['birth_weight'] ?? cert_extract_value_after_label($childSeg, ['WEIGHT AT BIRTH', 'WEIGHT']);
         }
 
-        $fields['mother_citizenship'] = cert_extract_value_after_label($ocrText, ['CITIZENSHIP']);
-        $fields['mother_religion']    = cert_extract_value_after_label($ocrText, ['RELIGION']);
-        $countsRow = cert_extract_value_row($ocrText, ['TOTAL NUMBER OF CHILDREN', 'TOTAL CHILDREN BORN ALIVE', '10A']);
-        if (count($countsRow) >= 5) {
-            [$fields['mother_children_born_alive'], $fields['mother_children_still_living'], $fields['mother_children_now_dead'], $fields['mother_occupation'], $fields['mother_age']] = $countsRow;
-        } else {
-            $fields['mother_occupation'] = $fields['mother_occupation'] ?? cert_extract_value_after_label($ocrText, ['OCCUPATION']);
-            $fields['mother_age'] = $fields['mother_age'] ?? cert_extract_value_after_label($ocrText, ['AGE AT']);
+        // --- MOTHER DETAILS ---
+        if ($motherSeg !== '') {
+            $fields['mother_citizenship'] = cert_extract_value_after_label($motherSeg, ['CITIZENSHIP']);
+            $fields['mother_religion']    = cert_extract_value_after_label($motherSeg, ['RELIGION']);
+            $countsRow = cert_extract_value_row($motherSeg, ['TOTAL NUMBER OF CHILDREN', 'TOTAL CHILDREN BORN ALIVE', '10A']);
+            if (count($countsRow) >= 5) {
+                [$fields['mother_children_born_alive'], $fields['mother_children_still_living'], $fields['mother_children_now_dead'], $fields['mother_occupation'], $fields['mother_age']] = $countsRow;
+            } else {
+                $fields['mother_occupation'] = $fields['mother_occupation'] ?? cert_extract_value_after_label($motherSeg, ['OCCUPATION']);
+                $fields['mother_age'] = $fields['mother_age'] ?? cert_extract_value_after_label($motherSeg, ['AGE AT']);
+            }
+            $residenceRow = cert_extract_value_row($motherSeg, ['13. RESIDENCE', 'RESIDENCE']);
+            if ($residenceRow) $fields['mother_residence'] = implode(', ', $residenceRow);
         }
-        $residenceRow = cert_extract_value_row($ocrText, ['13. RESIDENCE', 'RESIDENCE']);
-        if ($residenceRow) $fields['mother_residence'] = implode(', ', $residenceRow);
 
-        $fatherRow = cert_extract_value_row($ocrText, ['15. CITIZENSHIP', 'CITIZENSHIP']);
-        if (count($fatherRow) >= 4) {
-            [$fields['father_citizenship'], $fields['father_religion'], $fields['father_occupation'], $fields['father_age']] = $fatherRow;
-        } else {
-            $fields['father_citizenship'] = $fields['father_citizenship'] ?? cert_extract_value_after_label($ocrText, ['CITIZENSHIP']);
-            $fields['father_religion']    = $fields['father_religion'] ?? cert_extract_value_after_label($ocrText, ['RELIGION']);
-            $fields['father_occupation']  = $fields['father_occupation'] ?? cert_extract_value_after_label($ocrText, ['OCCUPATION']);
-            $fields['father_age']         = $fields['father_age'] ?? cert_extract_value_after_label($ocrText, ['AGE AT']);
+        // --- FATHER DETAILS ---
+        if ($fatherSeg !== '') {
+            $fatherRow = cert_extract_value_row($fatherSeg, ['15. CITIZENSHIP', 'CITIZENSHIP']);
+            if (count($fatherRow) >= 4) {
+                [$fields['father_citizenship'], $fields['father_religion'], $fields['father_occupation'], $fields['father_age']] = $fatherRow;
+            } else {
+                $fields['father_citizenship'] = cert_extract_value_after_label($fatherSeg, ['CITIZENSHIP']);
+                $fields['father_religion']    = cert_extract_value_after_label($fatherSeg, ['RELIGION']);
+                $fields['father_occupation']  = cert_extract_value_after_label($fatherSeg, ['OCCUPATION']);
+                $fields['father_age']         = cert_extract_value_after_label($fatherSeg, ['AGE AT']);
+            }
+            $fResidenceRow = cert_extract_value_row($fatherSeg, ['19. RESIDENCE', 'RESIDENCE']);
+            if ($fResidenceRow) $fields['father_residence'] = implode(', ', $fResidenceRow);
         }
-        $fResidenceRow = cert_extract_value_row($ocrText, ['19. RESIDENCE', 'RESIDENCE']);
-        if ($fResidenceRow) $fields['father_residence'] = implode(', ', $fResidenceRow);
 
-        $mRow = cert_extract_value_row($ocrText, ['MARRIAGE OF PARENTS', '20A. DATE', 'DATE']);
-        if (count($mRow) >= 3) {
-            $fields['parents_marriage_date'] = trim($mRow[0] . ' ' . $mRow[1] . ', ' . $mRow[2]);
-            if (count($mRow) > 3) $fields['parents_marriage_place'] = implode(', ', array_slice($mRow, 3));
+        // --- MARRIAGE OF PARENTS ---
+        if ($marriageSeg !== '') {
+            $mRow = cert_extract_value_row($marriageSeg, ['MARRIAGE OF PARENTS', '20A. DATE', 'DATE']);
+            if (count($mRow) >= 3) {
+                $fields['parents_marriage_date'] = trim($mRow[0] . ' ' . $mRow[1] . ', ' . $mRow[2]);
+                if (count($mRow) > 3) $fields['parents_marriage_place'] = implode(', ', array_slice($mRow, 3));
+            }
+            if (empty($fields['parents_marriage_date'])) $fields['parents_marriage_date'] = cert_extract_value_after_label($marriageSeg, ['DATE']);
+            if (empty($fields['parents_marriage_place'])) $fields['parents_marriage_place'] = cert_extract_value_after_label($marriageSeg, ['PLACE']);
         }
-        if (empty($fields['parents_marriage_date'])) $fields['parents_marriage_date'] = cert_extract_value_after_label($ocrText, ['DATE']);
-        if (empty($fields['parents_marriage_place'])) $fields['parents_marriage_place'] = cert_extract_value_after_label($ocrText, ['PLACE']);
 
-        if (preg_match('/[X✕]\s*\d\.\s*([A-Za-z][A-Za-z \(\)\/]+)/', $ocrText, $m)) $fields['attendant_type'] = trim($m[1]);
-        if (preg_match('/\b(\d{1,2}:\d{2}\s*(AM|PM))\b/i', $ocrText, $m)) $fields['attendant_time_born'] = strtoupper($m[1]);
-        $fields['attendant_name']  = cert_extract_value_after_label($ocrText, ['Name in Print']);
-        $fields['attendant_title'] = cert_extract_value_after_label($ocrText, ['Title or Position']);
-        $fields['informant_name']         = cert_extract_value_after_label($ocrText, ['Name in Print']);
-        $fields['informant_relationship'] = cert_extract_value_after_label($ocrText, ['Relationship to the Child']);
-        $fields['informant_address']      = cert_extract_value_after_label($ocrText, ['Address']);
-        $fields['informant_date']         = cert_extract_value_after_label($ocrText, ['Date']);
-        $fields['prepared_by']         = cert_extract_value_after_label($ocrText, ['Name in Print']);
-        $fields['prepared_by_title']   = cert_extract_value_after_label($ocrText, ['Title or Position']);
-        $fields['prepared_by_address'] = cert_extract_value_after_label($ocrText, ['Address']);
-        $fields['prepared_by_date']    = cert_extract_value_after_label($ocrText, ['Date']);
+        // --- ATTENDANT ---
+        if ($attendSeg !== '') {
+            if (preg_match('/[X✕]\s*\d\.\s*([A-Za-z][A-Za-z \(\)\/]+)/', $attendSeg, $m)) $fields['attendant_type'] = trim($m[1]);
+            if (preg_match('/\b(\d{1,2}:\d{2}\s*(AM|PM))\b/i', $attendSeg, $m)) $fields['attendant_time_born'] = strtoupper($m[1]);
+            $fields['attendant_name']  = cert_extract_value_after_label($attendSeg, ['Name in Print']);
+            $fields['attendant_title'] = cert_extract_value_after_label($attendSeg, ['Title or Position']);
+        }
 
+        // --- INFORMANT ---
+        if ($informSeg !== '') {
+            $fields['informant_name']         = cert_extract_value_after_label($informSeg, ['Name in Print']);
+            $fields['informant_relationship'] = cert_extract_value_after_label($informSeg, ['Relationship to the Child']);
+            $fields['informant_address']      = cert_extract_value_after_label($informSeg, ['Address']);
+            $fields['informant_date']         = cert_extract_value_after_label($informSeg, ['Date']);
+        }
+
+        // --- PREPARED BY ---
+        if ($prepSeg !== '') {
+            $fields['prepared_by']         = cert_extract_value_after_label($prepSeg, ['Name in Print']);
+            $fields['prepared_by_title']   = cert_extract_value_after_label($prepSeg, ['Title or Position']);
+            $fields['prepared_by_address'] = cert_extract_value_after_label($prepSeg, ['Address']);
+            $fields['prepared_by_date']    = cert_extract_value_after_label($prepSeg, ['Date']);
+        }
+
+        // --- DATE PREPARED ---
         if (empty(trim((string) ($fields['date_prepared'] ?? '')))) {
             $candidate = trim((string) ($fields['prepared_by_date'] ?? ''));
-            if ($candidate === '') $candidate = cert_find_date_in($ocrText);
+            if ($candidate === '' && $prepSeg !== '') $candidate = cert_find_date_in($prepSeg);
+            if ($candidate === '' && $informSeg !== '') $candidate = cert_find_date_in($informSeg);
             if ($candidate !== '') $fields['date_prepared'] = $candidate;
         }
 
+        // --- BARANGAY ---
         if (empty(trim((string) ($fields['barangay'] ?? '')))) $fields['barangay'] = cert_first_place_token($fields['mother_residence'] ?? '');
         if (empty(trim((string) ($fields['barangay'] ?? '')))) $fields['barangay'] = cert_first_place_token($fields['father_residence'] ?? '');
         if (empty(trim((string) ($fields['barangay'] ?? '')))) {
@@ -1332,8 +1372,11 @@ if (!function_exists('cert_auto_extract_birth')) {
             }
         }
 
-        if (preg_match('/REMARKS(.*)/is', $ocrText, $m)) {
-            $remarksText = trim(preg_replace('/\s+/', ' ', $m[1]));
+        // --- REMARKS ---
+        if ($remarksSeg !== '') {
+            $remarkLines = array_slice(preg_split('/\r\n|\r|\n/', $remarksSeg), 1);
+            $remarkLines = array_filter(array_map('trim', $remarkLines), fn($l) => $l !== '');
+            $remarksText = trim(implode(' ', $remarkLines));
             if ($remarksText !== '') $fields['remarks'] = $remarksText;
         }
 
