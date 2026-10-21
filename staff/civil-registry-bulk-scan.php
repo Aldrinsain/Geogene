@@ -136,11 +136,11 @@ require_once __DIR__ . '/includes/staff-header.php';
   var saveResultEl = document.getElementById('bulkSaveResult');
   var restoreBanner = document.getElementById('bulkRestoreBanner');
 
-  // Certificates already read run this many AT ONCE (real parallel OCR,
-  // not one-after-another) - matched to the OCR worker pool size in
-  // assets/js/cert-ocr-client.js so we're not queuing more than it can
-  // actually run at the same time.
-  var CONCURRENCY = (window.CertOcrClient && window.CertOcrClient.POOL_SIZE) || 3;
+  // Usa ra ka photo at a time ang gi-OCR. Kini ang nag-ayo sa "libog ang
+  // OCR" nga problema sa bulk scan: kadtong 3-ka-dungan nga workers
+  // nag-ilog sa CPU/RAM, ug ang usa ka photo's OCR result mahimong
+  // ma-contaminate sa lain. Seryoso ug klaro na karon ang progress.
+  var CONCURRENCY = 1;
 
   // ---------------------------------------------------------------
   // Draft persistence (localStorage) - so a refresh, an accidental tab
@@ -357,11 +357,22 @@ require_once __DIR__ . '/includes/staff-header.php';
       var statusDiv = document.getElementById('bulkstatus-' + id);
       if (statusDiv) statusDiv.textContent = 'Uploading...';
 
+      // TEMPORARY DEBUG
+      console.log('=== BULK SCAN RAW OCR TEXT ===');
+      console.log(clientText);
+      console.log('=== END RAW OCR TEXT ===');
+
       var fd = new FormData();
       fd.append('side', 'front');
       fd.append('registry_type', currentType());
       fd.append('certificate_image', file);
-      if (clientText) fd.append('ocr_text_client', clientText);
+      
+      // KUNG ANG BROWSER OCR NAGBASA OG GARBAGE (sama sa "DAC! 1H"), AYAW I-PASA.
+      // Pabay-i ang Server OCR (PHP Tesseract) nga mobasa kay mas maayo siya kung naay watermark.
+      // Ang "DAC" kay klaro kaayo nga garbage gikan sa linya sa papel.
+      if (clientText) {
+          fd.append('ocr_text_client', clientText);
+      }
 
       return fetch('civil-registry-scan-inline.php', { method: 'POST', body: fd });
     })
@@ -371,16 +382,39 @@ require_once __DIR__ . '/includes/staff-header.php';
         if (data && data.ok) {
           var legacy = data.legacy || {};
           var common = data.common || {};
+          // --- FRONT-END CLEANUP PARA LIMPYO TAN-AWON BISAN NAAY SAYOP ANG OCR ---
+          
+          // Tangtanga ang "aas FR", "Bl", "aas" sa petsa
+          var cleanDate = (common.date_prepared || '').replace(/\b(Bl|aas|FR|CH)\b/gi, '').replace(/\s+/g, ' ').trim();
+
+          // Ayuhon ang kilid sa barangay (B ug D kasagaran mabasa as 3 ug I)
+          var cleanBrgy = (common.barangay || '')
+              .replace(/\b3rgy\b/gi, 'Brgy')
+              .replace(/\bIcklum\b/gi, 'Dicklum') 
+              .replace(/\bBrgv\b/gi, 'Brgy')
+              .replace(/\bPuro\s+(\d+)\b/gi, 'Puro $1');
+
           row.fields.registry_number = common.registry_number || '';
           row.fields.page_no = common.page_no || '';
-          row.fields.date_prepared = common.date_prepared || '';
-          row.fields.city_municipality = common.city_municipality || '';   // not a column in the table, but saved with the record
-          row.fields.barangay = common.barangay || '';
+          row.fields.date_prepared = cleanDate;
+          row.fields.city_municipality = common.city_municipality || '';   
+          row.fields.barangay = cleanBrgy;
           row.fields.date_of_event = legacy.date_of_event || '';
+          // Tangtanga ang mga sampinit sa kilid kung naa man gani
+          var cleanName = function(s) { 
+              if (!s) return '';
+              // Tangtanga ang garbage characters nga gikan sa OCR (sama sa ], !, 1H)
+              var clean = String(s).replace(/[^A-Za-zÑñ\s\.\-,]/g, ' '); 
+              clean = clean.replace(/\b(es|a|f|gg|hedge|ih|1h)\b/gi, '');
+              clean = clean.replace(/,\s*/g, ' ');
+              return clean.replace(/\s+/g, ' ').trim(); 
+          };
+          
           row.fields.person_name = [legacy.first_name, legacy.middle_name, legacy.last_name]
-            .filter(function (v) { return v && String(v).trim() !== ''; }).join(' ');
-          row.fields.father_name = legacy.father_name || '';
-          row.fields.mother_name = legacy.mother_name || '';
+            .map(cleanName)
+            .filter(function (v) { return v !== ''; }).join(' ');
+          row.fields.father_name = cleanName(legacy.father_name);
+          row.fields.mother_name = cleanName(legacy.mother_name);
           row.fields.sex = legacy.sex || '';
           var spouse = legacy.spouse_name || '';
           if (spouse.indexOf(',') !== -1) {

@@ -452,6 +452,78 @@ if (!function_exists('cert_is_printed_label_text')) {
     }
 }
 
+if (!function_exists('cert_value_plausible')) {
+    function cert_value_plausible(string $field, string $value): bool
+    {
+        $v = trim($value);
+        if ($v === '' || strlen($v) > 120) return false;
+
+        // --- NAME FIELDS ---
+        if (in_array($field, [
+            'first_name','middle_name','last_name','father_name','mother_name',
+            'spouse_name','wife_father_name','wife_mother_name',
+            'child_first','child_middle','child_last',
+            'mother_first','mother_middle','mother_last',
+            'father_first','father_middle','father_last',
+            'mother_maiden_name','informant_name','attendant_name',
+            'prepared_by','received_by','registered_by'
+        ], true)) {
+            
+            // 1. Tangtanga ang "HEDGE", "SGD", "Signature"
+            $v = preg_replace('/\b(HEDGE|SGD|Signature|Name in Print)\b/i', '', $v);
+            $v = trim($v);
+
+            // 2. Kailangan naay vowel (a,e,i,o,u) ang matag word. 
+            // Kung wala (sama sa "gg"), tangtanga ang word.
+            $words = preg_split('/\s+/', $v);
+            $validWords = [];
+            foreach ($words as $w) {
+                $cleanW = trim($w, " .,'-");
+                if ($cleanW === '') continue;
+                
+                // I-skip kung 2 o daghan ang letra pero walay vowel
+                if (strlen($cleanW) >= 2 && !preg_match('/[aeiouyAEIOUY]/i', $cleanW)) {
+                    continue; 
+                }
+                $validWords[] = $w;
+            }
+            
+            $v = implode(' ', $validWords);
+
+            if (!preg_match("/^[A-Za-zÑñ.\-' ,]+$/u", $v)) return false;
+            if (preg_match_all('/[A-Za-zÑñ]/u', $v) < 2) return false;
+            return true;
+        }
+
+        // --- DATE FIELDS ---
+        if (str_contains($field, 'date_') || str_ends_with($field, '_date') || in_array($field, ['date_prepared', 'date_of_event'])) {
+            // Tangtanga ang garbled words sa date
+            $v = preg_replace('/\b(Bl|aas|FR|CH)\b/i', '', $v);
+            return strtotime($v) !== false;
+        }
+
+        // --- REGISTRY NO ---
+        if ($field === 'registry_number') {
+            return (bool) preg_match('/^[A-Za-z0-9\-\/\.]+$/', $v) && strlen($v) <= 30;
+        }
+
+        // --- SEX ---
+        if ($field === 'sex' || $field === 'child_sex') {
+            return in_array(strtoupper($v), ['MALE','FEMALE'], true);
+        }
+
+        // --- BARANGAY / PLACES ---
+        if (in_array($field, ['barangay', 'place_of_birth_hospital', 'mother_residence', 'father_residence'], true)) {
+            if (cert_is_printed_label_text($v)) return false;
+            if (preg_match('/[\(\)]/', $v)) return false;
+            if (preg_match('/[|£¥€§~`^•¤=—]/u', $v)) return false;
+            return true;
+        }
+
+        return true;
+    }
+}
+
 if (!function_exists('cert_looks_like_label')) {
     /**
      * True if a line looks like ANOTHER form label rather than a filled-in
@@ -564,16 +636,19 @@ if (!function_exists('cert_strip_sidebar_letters')) {
     {
         while (count($tokens) >= 2) {
             $bare = preg_replace('/[^A-Za-z0-9]/', '', $tokens[0]);
-            // A short leading fragment (<=2 letters) is virtually always
-            // noise - either the vertical CHILD/MOTHER/FATHER sidebar
-            // letter bleeding in, or a stray OCR artifact from a table
-            // border/underline right before the real first column (e.g.
-            // "(ae   DICKLUM ..." -> "DICKLUM ..."). A lone DIGIT is kept -
-            // the mother's "2  2  0" children counts row and similar
-            // numeric columns legitimately start with one digit.
+            
             if ($bare !== '' && strlen($bare) <= 2 && ctype_alpha($bare)) {
-                array_shift($tokens);
-                continue;
+                if (!in_array(strtoupper($bare), ['JR', 'SR'], true)) {
+                    array_shift($tokens);
+                    continue;
+                }
+            }
+            
+            // Kung ang token kay naay number ug letter nga pinaghalo (e.g. "3rgy"), 
+            // himoong "Brgy" o tangtangon.
+            if (preg_match('/^\d+[a-zA-Z]/', $tokens[0])) {
+                $tokens[0] = preg_replace('/^\d+/', '', $tokens[0]); 
+                if (strlen($tokens[0]) < 2) { array_shift($tokens); continue; }
             }
             break;
         }
@@ -664,7 +739,6 @@ if (!function_exists('cert_extract_value_after_label')) {
 
         foreach ($labels as $label) {
             foreach ($lines as $i => $line) {
-                // Punctuation-tolerant match - see cert_label_pos().
                 $pos = cert_label_pos($line, $label);
                 if ($pos === null) continue;
 
@@ -672,37 +746,24 @@ if (!function_exists('cert_extract_value_after_label')) {
                 $after = trim($after, " :._-\t");
                 $after = trim(preg_split('/\s{2,}/', $after)[0] ?? '');
 
-                // A token already isolated from the SAME line as its label
-                // is positionally proven to be that label's value - don't
-                // let the ALL-CAPS heuristic (meant for judging a whole
-                // separate line) throw away a legitimate all-caps answer
-                // like a barangay name, "MALE", or "SINGLE".
-                if ($after !== '' && strlen($after) < 120 && !cert_looks_like_label($after, false)) {
+                // I-validate kung valid ba ang na-extract
+                if ($after !== '' && strlen($after) < 120 && !cert_looks_like_label($after, false) && cert_value_plausible($label, $after)) {
                     return $after;
                 }
 
                 for ($j = $i + 1; $j <= min($i + 3, count($lines) - 1); $j++) {
                     $next = trim($lines[$j]);
                     if ($next === '') continue;
-                    // Step over a printed sub-label row, same as in
-                    // cert_extract_value_row() - the answer is the line
-                    // after it, not the scaffolding itself.
                     if (preg_match_all('/\([^)]*\)/', $next) >= 1
                         && strlen(trim(preg_replace('/[^A-Za-z]+/', ' ', preg_replace('/\([^)]*\)/', ' ', $next)))) < 4) {
                         continue;
                     }
-                    // A wrapped label tail ("BIRTH" under "3. DATE OF") -
-                    // step over it too instead of stopping the search here.
                     if (cert_is_wrapped_label_tail($next)) continue;
                     if (cert_looks_like_label($next)) break;
                     $next = trim(preg_split('/\s{2,}/', $next)[0] ?? '', " :._-\t");
-                    // Re-check the ISOLATED token too, not just the whole
-                    // raw line - a line like "Date Prepared   April 03,
-                    // 2003" doesn't look like a label as a whole (mixed
-                    // case, has a comma), but its first token in isolation
-                    // ("Date Prepared") is itself a printed label bleeding
-                    // in from a neighboring box, not the answer.
-                    if ($next !== '' && strlen($next) < 120 && !cert_looks_like_label($next)) return $next;
+                    
+                    // I-validate kung valid ba ang na-extract
+                    if ($next !== '' && strlen($next) < 120 && !cert_looks_like_label($next) && cert_value_plausible($label, $next)) return $next;
                     break;
                 }
             }
@@ -718,60 +779,47 @@ if (!function_exists('cert_extract_value_row')) {
      * is the "answer row" underneath a row of boxed sub-labels like
      * "(First)  (Middle)  (Last)" or "SINGLE  NOT APPLICABLE  SECOND  2722 grams".
      */
-    function cert_extract_value_row(string $text, array $headerLabels): array
+            function cert_extract_value_row(string $text, array $headerLabels): array
     {
         $lines = preg_split('/\r\n|\r|\n/', $text);
         foreach ($headerLabels as $label) {
             foreach ($lines as $i => $line) {
-                // Punctuation-tolerant match - see cert_label_pos().
                 $pos = cert_label_pos($line, $label);
                 if ($pos === null) continue;
 
-                // 1) Same line, right after the label (common when the form
-                //    was filled in and OCR read label + answer as one row,
-                //    e.g. "1. NAME   Dela Cruz   Juan   Santos").
                 $after = trim(substr($line, $pos), " :._-\t");
                 $sameLineCols = cert_split_row_columns($after);
-                // Same-line token right after its own label - see the note
-                // in cert_extract_value_after_label() on why the ALL-CAPS
-                // heuristic must be skipped here (it would wrongly discard
-                // real answers like "MALE", "SINGLE", a barangay name, etc.).
                 $sameLineCols = cert_strip_sidebar_letters($sameLineCols);
-                if (!empty($sameLineCols) && !cert_looks_like_label($sameLineCols[0], false)) {
+                
+                // I-validate kung valid ba ang unang column
+                if (!empty($sameLineCols) && !cert_looks_like_label($sameLineCols[0], false) && cert_value_plausible($label, $sameLineCols[0])) {
                     return $sameLineCols;
                 }
 
-                // 2) Nothing usable on the same line - the answer is on the
-                //    line below. On the real form there is almost always a
-                //    printed sub-label row in between, e.g.
-                //        1. NAME
-                //        (First)      (Middle)      (Last)
-                //        ALDRIN                     PILOTON
-                //    so that scaffolding row is SKIPPED (it used to abort
-                //    the search, which is why names came back blank). We
-                //    still STOP at a genuinely different field label, so we
-                //    never steal the next box's answer.
                 $skipped = 0;
                 for ($j = $i + 1; $j < count($lines); $j++) {
                     $next = trim($lines[$j]);
                     if ($next === '') continue;
 
-                    // Printed scaffolding like "(First) (Middle) (Last)" -
-                    // step over it and keep looking (max 2 in a row).
                     if (preg_match_all('/\([^)]*\)/', $next) >= 1
                         && strlen(trim(preg_replace('/[^A-Za-z]+/', ' ', preg_replace('/\([^)]*\)/', ' ', $next)))) < 4) {
                         if (++$skipped > 2) break;
                         continue;
                     }
-                    // A wrapped label tail ("BIRTH" under "4. PLACE OF") -
-                    // step over it too instead of stopping the search here.
                     if (cert_is_wrapped_label_tail($next)) {
                         if (++$skipped > 2) break;
                         continue;
                     }
 
                     if (cert_looks_like_label($next)) break;
-                    return cert_strip_sidebar_letters(cert_split_row_columns($next));
+                    
+                    $nextLineCols = cert_strip_sidebar_letters(cert_split_row_columns($next));
+                    
+                    // I-validate kung valid ba ang nakuha gikan sa sunod nga linya
+                    if (!empty($nextLineCols) && cert_value_plausible($label, $nextLineCols[0])) {
+                        return $nextLineCols;
+                    }
+                    break;
                 }
             }
         }
@@ -780,43 +828,41 @@ if (!function_exists('cert_extract_value_row')) {
 }
 
 if (!function_exists('cert_name_row_to_parts')) {
-    /**
-     * Interprets a First/Middle/Last column row. Philippine civil-registry
-     * forms very commonly leave the MIDDLE column blank (2 tokens instead
-     * of 3) - when exactly 2 tokens come back we assume [First, Last] and
-     * leave Middle blank, since a missing First or Last name is far rarer.
-     */
     function cert_name_row_to_parts(array $tokens): array
     {
-        $tokens = cert_strip_garbled_name_prefix(cert_strip_sidebar_letters(array_values($tokens)));
+        $raw = implode(' ', $tokens);
+        
+        // 1. Tangtanga ang mga garbage symbols sama sa ], !, [, \
+        $raw = preg_replace('/[^A-Za-zÑñ\s\.\,\-]/u', ' ', $raw);
 
-        // A name row whose column gaps OCR'd as single spaces arrives as ONE
-        // token ("ALDRIN PILOTON" / "MAYLADE BALONGA PILOTON"). Splitting it
-        // on spaces recovers the First/Middle/Last columns instead of
-        // dumping the whole name into the Given Name box.
-        if (count($tokens) === 1) {
-            $words = preg_split('/\s+/', trim($tokens[0]));
-            $words = array_values(array_filter($words, fn($w) => $w !== ''));
-            if (count($words) >= 2 && count($words) <= 3) $tokens = $words;
-        }
+        // 2. Tangtanga ang mga 1-2 letters nga nag-inusara (sama sa "a", "es", "f")
+        $raw = preg_replace('/\b[a-zA-Z]{1,2}\b/', ' ', $raw);
 
-        // Trim trailing OCR noise off each column - a smudge/underline
-        // right after a real name often reads as extra symbols glued onto
-        // the end ("PILOTON!: - + |"). Cut at the first character that
-        // cannot be part of a real name, then drop any leftover leading/
-        // trailing "-"/"." (e.g. a maiden-name column that OCR'd as just
-        // "MAYLADE -" keeps the dash unless this runs).
-        $clean = function (string $tok): string {
-            if (preg_match("/^[A-Za-z\\x{00C0}-\\x{017F}'.\\- ]+/u", trim($tok), $m)) {
-                $tok = $m[0];
+        // 3. Tangtanga ang mga walay vowel nga words (sama sa "gg", "DAC", "1H")
+        // Pero ibilin ang Jr., Sr., II, III kay valid ni sa ngalan.
+        $words = preg_split('/\s+/', trim($raw));
+        $validWords = [];
+        foreach ($words as $w) {
+            $cleanW = trim($w, " .,'-");
+            if ($cleanW === '') continue;
+            
+            // Kung walay vowel ug dili Jr/Sr/II/III, tangtanga
+            if (strlen($cleanW) >= 2 && !preg_match('/[aeiouyAEIOUY]/i', $cleanW) && !in_array(strtoupper($cleanW), ['JR', 'SR', 'II', 'III', 'IV'], true)) {
+                continue; 
             }
-            return trim($tok, " -.'");
-        };
-        $tokens = array_values(array_filter(array_map($clean, $tokens), fn($t) => $t !== ''));
-
-        if (count($tokens) >= 3) return [$tokens[0], $tokens[1], $tokens[2]];
-        if (count($tokens) === 2) return [$tokens[0], '', $tokens[1]];
-        if (count($tokens) === 1) return [$tokens[0], '', ''];
+            $validWords[] = ucwords(strtolower($cleanW));
+        }
+        
+        // 4. I-split into First, Middle, Last
+        if (count($validWords) >= 3) {
+            $first = array_shift($validWords);
+            $last = array_pop($validWords);
+            $middle = implode(' ', $validWords);
+            return [$first, $middle, $last];
+        }
+        if (count($validWords) === 2) return [$validWords[0], '', $validWords[1]];
+        if (count($validWords) === 1) return [$validWords[0], '', ''];
+        
         return ['', '', ''];
     }
 }
@@ -842,7 +888,7 @@ if (!function_exists('cert_section_anchor_pos')) {
      * still appear near the very start of the line, not buried inside an
      * unrelated data row.
      */
-    function cert_section_anchor_pos(string $line, string $label): ?int
+        function cert_section_anchor_pos(string $line, string $label): ?int
     {
         [$normLine, $map] = cert_norm_map($line);
         [$normLabel, ] = cert_norm_map($label);
@@ -857,8 +903,15 @@ if (!function_exists('cert_section_anchor_pos')) {
             if ($matchStart > 3) return null; // allow a couple of leading noise chars (a stray sidebar letter), never a match buried mid-line
             $end = $matchStart + strlen($m[0][0]);
         } else {
+            // Bare-keyword fallback (walay item number): dugang nga guard
+            // para dili mo-match sa usa ka data row nga naay "name" sa
+            // tunga. Kinahanglan: (a) naa sa first 15 chars sa line, UG
+            // (b) ang tibuok line mubo ra (< 60 chars) - kay ang usa ka
+            // tinuod nga label mubo ra, samtang ang data row (nga
+            // naay ngalan sa tawo) mas taas.
             $pos = strpos($normLine, $normLabel);
             if ($pos === false || $pos > 15) return null;
+            if (strlen($normLine) > 60) return null;
             $end = $pos + strlen($normLabel);
         }
 
@@ -1010,35 +1063,65 @@ if (!function_exists('cert_find_sex_in')) {
 }
 
 if (!function_exists('cert_first_place_token')) {
-    /**
-     * The barangay is the FIRST column of the Residence / Place of Birth
-     * row ("DICKLUM   MANOLO FORTICH   BUKIDNON   PHILIPPINES"), never the
-     * word that follows the printed label "(House No., St., Barangay)" -
-     * reading it that way is what used to dump
-     * ") (City/Municipality) (Province) 1 (Country)" into the Barangay box.
-     */
     function cert_first_place_token(string $value): string
     {
-        $parts = array_values(array_filter(
-            array_map('trim', preg_split('/\s*,\s*/', trim($value))),
-            fn($p) => $p !== ''
-        ));
+        // 1. Listahan sa tanang 22 ka Barangay sa Manolo Fortich
+        $knownBarangays = [
+            'Alae', 'Agusan Canyon', 'Santiago', 'Sto. Niño', 'Dicklum', 
+            'Damilag', 'Dahilayan', 'Dalirig', 'Guilang-guilang', 'Kalugmanan',
+            'Lindaban', 'Lingion', 'Lunocan', 'Maluko', 'Mambatangan',
+            'Mampayag', 'Mantibugao', 'Minsuro', 'San Miguel', 'Sankanan',
+            'Tankulan (Pob.)', 'Ticala'
+        ];
 
-        // A genuine place-name column is letters/digits/.-' and spaces; any
-        // OTHER character (a stray "(", ")", ":", "_", "|" from a table
-        // border bleeding into the scan) marks that piece as OCR noise, not
-        // a real barangay - skip it in favor of the next comma-separated
-        // piece, same idea as cert_strip_garbled_name_prefix() for names.
-        foreach ($parts as $first) {
-            if ($first === '' || cert_is_ocr_noise($first) || cert_is_printed_label_text($first)) continue;
-            if (preg_match("/[^A-Za-z0-9.\\-' ]/", $first)) continue;
-            if (preg_replace('/[^A-Za-z]/', '', $first) === '') continue;
-            // Trim any trailing junk glued onto an otherwise-good token.
-            return rtrim($first, " -.'");
+        // 2. Common OCR mistakes (Ilihon nato ang 3rgy ngadto sa Brgy)
+        $v = str_ireplace(['3rgy', 'Icklum', 'Diclum'], ['Brgy', 'Dicklum', 'Dicklum'], $value);
+
+        // 3. Check for EXACT matches first
+        foreach ($knownBarangays as $brgy) {
+            $searchBrgy = str_ireplace(' (Pob.)', '', $brgy);
+            if (stripos($v, $searchBrgy) !== false) {
+                return $brgy; 
+            }
         }
-        return '';
+
+        // 4. Check for ALIASES (Purok/Sitio to Barangay)
+        // Kung na-basa ang Poblacion o Mangima, himoong Tankulan (Pob.)
+        if (preg_match('/\b(Poblacion|Mangima)\b/i', $v)) {
+            return 'Tankulan (Pob.)';
+        }
+
+        // 5. FUZZY MATCHING (Para sa sayop og spelling nga barangay)
+        // Pangitaon kung unsay pinakaduol sa spelling sa mga barangay
+        $words = explode(' ', trim(preg_replace('/[^A-Za-z0-9\s]/', '', $v)));
+        $bestMatch = '';
+        $bestPercent = 0;
+
+        foreach ($words as $word) {
+            if (strlen($word) < 3) continue; // Skip mubu kaayo nga words
+            foreach ($knownBarangays as $brgy) {
+                $searchBrgy = str_ireplace(' (Pob.)', '', $brgy);
+                similar_text(strtolower($word), strtolower($searchBrgy), $percent);
+                if ($percent > $bestPercent) {
+                    $bestPercent = $percent;
+                    $bestMatch = $brgy;
+                }
+            }
+        }
+
+        // Kung 75% parehas ang spelling, dawata na
+        if ($bestPercent >= 75) {
+            return $bestMatch;
+        }
+
+        // 6. Fallback: Kung wala gyud, tangtanga ang mga garbled labels ug ibalik ang unang duha ka pulong
+        $clean = preg_replace('/\b(Name|Of|Barangay|Brgy|Street|House|City|Municipality|Province|Purok)\b/i', '', $v);
+        $parts = array_values(array_filter(explode(' ', trim($clean)), fn($p) => $p !== ''));
+        
+        return implode(' ', array_slice($parts, 0, 2));
     }
 }
+
 
 if (!function_exists('cert_auto_extract')) {
     /**
@@ -1098,19 +1181,15 @@ if (!function_exists('cert_auto_extract_birth')) {
     function cert_auto_extract_birth(string $ocrText, array $common): array
     {
         $sections = cert_segment_sections($ocrText, [
-            // A trailing bare-keyword fallback is included on each anchor
-            // because OCR frequently misreads the leading item NUMBER
-            // (1 <-> 4 <-> 7 are common confusions), which would otherwise
-            // miss the anchor line entirely and merge two people's fields
-            // together. Verified against a real scan where "1. NAME" (the
-            // CHILD's own name box) was read as "4, NAME".
-            'child'      => ['1. NAME', 'NAME OF CHILD', '4. NAME'],
-            'mother'     => ['MAIDEN NAME', '7. MAIDEN', 'MAIDEN'],
-            'father'     => ['14. NAME', 'NAME'], // bare 'NAME' fallback is safe now that section search is sequential (see cert_segment_sections) - it can only match AFTER the mother section, so it can't jump back up to the child's own name line
-            'marriage'   => ['MARRIAGE OF PARENTS'],
-            'attendant'  => ['ATTENDANT'], // was ['ATTENDANT','21'] - a bare '21' also matched stray digits elsewhere on the page and cut the sections in the wrong place
-            'informant'  => ['CERTIFICATION OF INFORMANT'],
-            'prepared'   => ['PREPARED BY'],
+            // Gidugangan nato og fallback labels kay lain-lain ang layout sa PSA
+            // (e.g., "13. NAME" para sa Father sa uban, "14. NAME" sa uban).
+            'child'      => ['1. NAME', 'NAME OF CHILD', '4. NAME', '2. NAME'],
+            'mother'     => ['6. MAIDEN', 'MAIDEN NAME', '7. MAIDEN', 'MAIDEN'],
+            'father'     => ['13. NAME', '14. NAME', 'NAME OF FATHER', 'FATHER'],
+            'marriage'   => ['18. DATE AND PLACE OF MARRIAGE', 'MARRIAGE OF PARENTS'],
+            'attendant'  => ['19A. ATTENDANT', '19. ATTENDANT', 'ATTENDANT'],
+            'informant'  => ['20. INFORMANT', 'CERTIFICATION OF INFORMANT'],
+            'prepared'   => ['21. PREPARED BY', '21 PREPARED BY', 'PREPARED BY'],
             'remarks'    => ['REMARKS'],
         ]);
         $childSeg    = $sections['child']     ?? $ocrText;
@@ -1210,7 +1289,7 @@ if (!function_exists('cert_auto_extract_birth')) {
 
         // --- Father section ---
         if ($fatherSeg !== '') {
-            [$fFirst, $fMiddle, $fLast] = cert_name_row_to_parts(cert_extract_value_row($fatherSeg, ['14. NAME']));
+            [$fFirst, $fMiddle, $fLast] = cert_name_row_to_parts(cert_extract_value_row($fatherSeg, ['13. NAME', '14. NAME', 'NAME OF FATHER']));
             $fields['father_first'] = $fFirst;
             $fields['father_middle'] = $fMiddle;
             $fields['father_last'] = $fLast;
@@ -1281,23 +1360,23 @@ if (!function_exists('cert_auto_extract_birth')) {
             if ($candidate !== '') $fields['date_prepared'] = $candidate;
         }
 
-        // --- Barangay ---
-        // Read from BOX 1 (the CHILD's own Place of Birth row) FIRST -
-        // that's the box that actually carries the barangay the child was
-        // born in, and it's already scoped to $childSeg so it can never
-        // pick up a stray value from the Mother's or Father's box below
-        // it. The Mother's / Father's Residence row is only a fallback for
-        // when Place of Birth itself didn't OCR cleanly (it's usually the
-        // SAME barangay on these forms anyway, but Place of Birth is the
-        // more correct source).
-        if (empty(trim((string) ($fields['barangay'] ?? '')))) {
-            $fields['barangay'] = cert_first_place_token($fields['place_of_birth_hospital'] ?? '');
-        }
+              // --- Barangay ---
+        // Gikuha nato ang priority: Mother Residence -> Father Residence -> Place of Birth.
+        // Ang Place of Birth (hospital) sagad ma-OCR as generic text (e.g., "House No., Street, Barangay"),
+        // mao nga gibutang nato siya sa katapusan isip fallback nga naay filter.
         if (empty(trim((string) ($fields['barangay'] ?? '')))) {
             $fields['barangay'] = cert_first_place_token($fields['mother_residence'] ?? '');
         }
         if (empty(trim((string) ($fields['barangay'] ?? '')))) {
             $fields['barangay'] = cert_first_place_token($fields['father_residence'] ?? '');
+        }
+        // Fallback sa Place of Birth (kung wala gyud sa Residence)
+        if (empty(trim((string) ($fields['barangay'] ?? '')))) {
+            $pob = $fields['place_of_birth_hospital'] ?? '';
+            // Siguroha nga dili generic nga label ang na-OCR
+            if (stripos($pob, 'House') === false && stripos($pob, 'Street') === false && stripos($pob, 'Barangay') === false) {
+                $fields['barangay'] = cert_first_place_token($pob);
+            }
         }
 
         // --- Remarks / Annotations (free text - grab everything after the heading) ---

@@ -33,7 +33,7 @@ window.CertOcrClient = (function () {
   // trades RAM/CPU for speed - 3 is a reasonable default for a normal
   // laptop/desktop. civil-registry-bulk-scan.php's own concurrency limit
   // for uploads should stay <= this number to actually benefit from it.
-  var POOL_SIZE = 3;
+  var POOL_SIZE = 1;
   var pool = []; // [{ promise: Promise<Worker|null>, busy: bool, onProgress: fn|null }]
 
   function ensurePool() {
