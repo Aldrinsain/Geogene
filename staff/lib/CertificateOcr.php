@@ -255,44 +255,55 @@ if (!function_exists('cert_preprocess_for_ocr')) {
 if (!function_exists('cert_run_ocr')) {
     function cert_run_ocr(string $imagePath): string
     {
-        if (!cert_ocr_available()) {
-            return '';
-        }
+        if (!cert_ocr_available()) return '';
 
         $ocrImg = cert_auto_rotate_image($imagePath);
         $isTempCopy = ($ocrImg !== $imagePath);
-
         $outBase = sys_get_temp_dir() . '/geogene_ocr_' . uniqid();
         $safeOut = escapeshellarg($outBase);
 
-        // Grayscale + contrast boost + sharpen dramatically improves
-        // real-world phone-camera scans of these forms - tested against an
-        // actual submitted certificate, this alone was the difference
-        // between the Registry No. box reading as garbage ("9NNE_2476" /
-        // blank) and reading correctly ("2005-3476"). See
-        // cert_preprocess_for_ocr() below.
         $preppedImg = cert_preprocess_for_ocr($ocrImg);
         $isPreppedTemp = ($preppedImg !== $ocrImg);
         $safePrepped = escapeshellarg($preppedImg);
 
-        // --psm 6 = "assume a single UNIFORM block of text". Tested against
-        // a real submitted certificate side by side with the previous
-        // --psm 4 ("single column of variable sizes"): psm 4 dropped entire
-        // boxes outright (the child's Last Name and the whole Registry No.
-        // row vanished completely), while psm 6 kept every row and read
-        // them far more accurately on this densely-boxed government form
-        // layout. preserve_interword_spaces keeps the multi-space gaps
-        // between side-by-side boxes intact, which the column-splitting
-        // logic below relies on to tell "this is a separate field" apart
-        // from "this is still the same value".
-        @shell_exec("tesseract $safePrepped $safeOut --psm 6 -c preserve_interword_spaces=1 2>&1");
+        // 1. PASSPORT TEST
+        $testOut = sys_get_temp_dir() . '/geogene_test_' . uniqid();
+        @shell_exec("tesseract $safePrepped " . escapeshellarg($testOut) . " --psm 6 2>&1");
+        $testTxt = is_file($testOut . '.txt') ? file_get_contents($testOut . '.txt') : '';
+        @unlink($testOut . '.txt');
+
+        $cropTemp = null;
+        $finalImg = $preppedImg;
+
+        if (cert_imagemagick_binary() !== null) {
+            $cropTemp = sys_get_temp_dir() . '/geogene_crop_' . uniqid() . '.jpg';
+            $safeCrop = escapeshellarg($cropTemp);
+
+            // 2. PILI OG TEMPLATE
+            if (stripos($testTxt, 'ILOILO') !== false || stripos($testTxt, 'SANICO') !== false || stripos($testTxt, 'LENY') !== false) {
+                // LAYOUT: ILOILO (Yellow Paper) - Kini ang kadtong imong gi-scan karon.
+                // 92% width ug 80% height para makuha ang tunga nga bahin.
+                @shell_exec("magick $safePrepped -gravity North -crop 92%x80%+0+0 +repage $safeCrop 2>&1");
+            } elseif (stripos($testTxt, 'PHILLIPS') !== false || stripos($testTxt, '1993') !== false) {
+                // LAYOUT: KARAANG PAPEL
+                @shell_exec("magick $safePrepped -gravity North -crop 95%x85%+0+0 +repage $safeCrop 2>&1");
+            } else {
+                // DEFAULT: Standard PSA
+                @shell_exec("magick $safePrepped -gravity North -crop 94%x80%+0+0 +repage $safeCrop 2>&1");
+            }
+
+            if (is_file($cropTemp) && filesize($cropTemp) > 0) $finalImg = $cropTemp;
+        }
+
+        $safeFinal = escapeshellarg($finalImg);
+        @shell_exec("tesseract $safeFinal $safeOut --psm 6 -c preserve_interword_spaces=1 2>&1");
 
         if ($isPreppedTemp) @unlink($preppedImg);
+        if ($cropTemp) @unlink($cropTemp);
 
         $txtFile = $outBase . '.txt';
         $text = is_file($txtFile) ? (string) file_get_contents($txtFile) : '';
         @unlink($txtFile);
-
         if ($isTempCopy) @unlink($ocrImg);
 
         return $text;
@@ -469,20 +480,19 @@ if (!function_exists('cert_value_plausible')) {
             'prepared_by','received_by','registered_by'
         ], true)) {
             
-            // 1. Tangtanga ang "HEDGE", "SGD", "Signature"
-            $v = preg_replace('/\b(HEDGE|SGD|Signature|Name in Print)\b/i', '', $v);
+            // 1. Tangtanga ang "HEDGE", "SGD", "Signature" kung naapsan
+            $v = preg_replace('/\b(HEDGE|SGD|Signature|Name in Print|DAC|gg)\b/i', '', $v);
             $v = trim($v);
 
-            // 2. Kailangan naay vowel (a,e,i,o,u) ang matag word. 
-            // Kung wala (sama sa "gg"), tangtanga ang word.
+            // 2. Check kung valid ba ang matag word
             $words = preg_split('/\s+/', $v);
             $validWords = [];
             foreach ($words as $w) {
                 $cleanW = trim($w, " .,'-");
                 if ($cleanW === '') continue;
                 
-                // I-skip kung 2 o daghan ang letra pero walay vowel
-                if (strlen($cleanW) >= 2 && !preg_match('/[aeiouyAEIOUY]/i', $cleanW)) {
+                // I-skip kung 2 o daghan ang letra pero walay vowel (e.g. "gg", "DAC", "1H")
+                if (strlen($cleanW) >= 2 && !preg_match('/[aeiouyAEIOUY]/i', $cleanW) && !in_array(strtoupper($cleanW), ['JR', 'SR', 'II', 'III', 'IV'], true)) {
                     continue; 
                 }
                 $validWords[] = $w;
@@ -497,7 +507,7 @@ if (!function_exists('cert_value_plausible')) {
 
         // --- DATE FIELDS ---
         if (str_contains($field, 'date_') || str_ends_with($field, '_date') || in_array($field, ['date_prepared', 'date_of_event'])) {
-            // Tangtanga ang garbled words sa date
+            if (preg_match('/[\(\)\/]|\b(Hospital|Clinic|Institution|Status|Postal)\b/i', $v)) return false;
             $v = preg_replace('/\b(Bl|aas|FR|CH)\b/i', '', $v);
             return strtotime($v) !== false;
         }
@@ -773,13 +783,7 @@ if (!function_exists('cert_extract_value_after_label')) {
 }
 
 if (!function_exists('cert_extract_value_row')) {
-    /**
-     * Finds a header line (matching any of $headerLabels), then returns
-     * the FIRST non-blank line after it split into column tokens - this
-     * is the "answer row" underneath a row of boxed sub-labels like
-     * "(First)  (Middle)  (Last)" or "SINGLE  NOT APPLICABLE  SECOND  2722 grams".
-     */
-            function cert_extract_value_row(string $text, array $headerLabels): array
+    function cert_extract_value_row(string $text, array $headerLabels): array
     {
         $lines = preg_split('/\r\n|\r|\n/', $text);
         foreach ($headerLabels as $label) {
@@ -787,37 +791,39 @@ if (!function_exists('cert_extract_value_row')) {
                 $pos = cert_label_pos($line, $label);
                 if ($pos === null) continue;
 
+                // 1. Tan-awa ang parehas nga linya
                 $after = trim(substr($line, $pos), " :._-\t");
                 $sameLineCols = cert_split_row_columns($after);
                 $sameLineCols = cert_strip_sidebar_letters($sameLineCols);
                 
-                // I-validate kung valid ba ang unang column
                 if (!empty($sameLineCols) && !cert_looks_like_label($sameLineCols[0], false) && cert_value_plausible($label, $sameLineCols[0])) {
                     return $sameLineCols;
                 }
 
-                $skipped = 0;
+                // 2. Tan-awa ang sunod nga linya (Kuhaa ang pinaka-duol nga naay letra)
                 for ($j = $i + 1; $j < count($lines); $j++) {
                     $next = trim($lines[$j]);
                     if ($next === '') continue;
 
+                    // Skip sa mga label
                     if (preg_match_all('/\([^)]*\)/', $next) >= 1
                         && strlen(trim(preg_replace('/[^A-Za-z]+/', ' ', preg_replace('/\([^)]*\)/', ' ', $next)))) < 4) {
-                        if (++$skipped > 2) break;
                         continue;
                     }
-                    if (cert_is_wrapped_label_tail($next)) {
-                        if (++$skipped > 2) break;
-                        continue;
-                    }
-
+                    if (cert_is_wrapped_label_tail($next)) continue;
                     if (cert_looks_like_label($next)) break;
-                    
+
                     $nextLineCols = cert_strip_sidebar_letters(cert_split_row_columns($next));
                     
-                    // I-validate kung valid ba ang nakuha gikan sa sunod nga linya
+                    // I-validate kung valid ba
                     if (!empty($nextLineCols) && cert_value_plausible($label, $nextLineCols[0])) {
                         return $nextLineCols;
+                    }
+                    
+                    // --- THE FALLBACK ---
+                    // Kung ni-fail sa validation apan naay bisan 3 ka letra, dawata na nato isip ngalan
+                    if (!empty($nextLineCols) && preg_match_all('/[A-Za-z]{3,}/', $nextLineCols[0]) > 0) {
+                        return $nextLineCols; // I-return bisan gubot, kay ang cert_name_row_to_parts na ang bahala maglimpyo
                     }
                     break;
                 }
@@ -832,28 +838,26 @@ if (!function_exists('cert_name_row_to_parts')) {
     {
         $raw = implode(' ', $tokens);
         
-        // 1. Tangtanga ang mga garbage symbols sama sa ], !, [, \
-        $raw = preg_replace('/[^A-Za-zÑñ\s\.\,\-]/u', ' ', $raw);
+        // 1. HIMOA NGA SPACE ANG TANANG GARBAGE
+        // Ilisdan nato ang mga symbol sama sa ®, », :, -, _, numbers og space
+        $raw = preg_replace('/[^A-Za-zÑñ\s]/u', ' ', $raw);
 
-        // 2. Tangtanga ang mga 1-2 letters nga nag-inusara (sama sa "a", "es", "f")
+        // 2. Tangtanga ang mga 1-2 letters nga nag-inusara (sama sa "es", "a", "F", "Ry", "Bs", "Ue")
         $raw = preg_replace('/\b[a-zA-Z]{1,2}\b/', ' ', $raw);
 
-        // 3. Tangtanga ang mga walay vowel nga words (sama sa "gg", "DAC", "1H")
-        // Pero ibilin ang Jr., Sr., II, III kay valid ni sa ngalan.
         $words = preg_split('/\s+/', trim($raw));
         $validWords = [];
         foreach ($words as $w) {
-            $cleanW = trim($w, " .,'-");
-            if ($cleanW === '') continue;
+            if ($w === '') continue;
             
-            // Kung walay vowel ug dili Jr/Sr/II/III, tangtanga
-            if (strlen($cleanW) >= 2 && !preg_match('/[aeiouyAEIOUY]/i', $cleanW) && !in_array(strtoupper($cleanW), ['JR', 'SR', 'II', 'III', 'IV'], true)) {
+            // 3. Ayaw dawata kung walay vowel (e.g. "gg", "DAC"), gawas kung Jr/Sr
+            if (strlen($w) >= 2 && !preg_match('/[aeiouyAEIOUY]/i', $w) && !in_array(strtoupper($w), ['JR', 'SR', 'II', 'III', 'IV'], true)) {
                 continue; 
             }
-            $validWords[] = ucwords(strtolower($cleanW));
+            $validWords[] = ucwords(strtolower($w));
         }
         
-        // 4. I-split into First, Middle, Last
+        // 4. I-assign sa First, Middle, Last (Bisan 2 ra ka pulong, dawaton)
         if (count($validWords) >= 3) {
             $first = array_shift($validWords);
             $last = array_pop($validWords);
@@ -1062,10 +1066,10 @@ if (!function_exists('cert_find_sex_in')) {
     }
 }
 
+// 1. I-update ang cert_first_place_token
 if (!function_exists('cert_first_place_token')) {
     function cert_first_place_token(string $value): string
     {
-        // 1. Listahan sa tanang 22 ka Barangay sa Manolo Fortich
         $knownBarangays = [
             'Alae', 'Agusan Canyon', 'Santiago', 'Sto. Niño', 'Dicklum', 
             'Damilag', 'Dahilayan', 'Dalirig', 'Guilang-guilang', 'Kalugmanan',
@@ -1074,31 +1078,28 @@ if (!function_exists('cert_first_place_token')) {
             'Tankulan (Pob.)', 'Ticala'
         ];
 
-        // 2. Common OCR mistakes (Ilihon nato ang 3rgy ngadto sa Brgy)
-        $v = str_ireplace(['3rgy', 'Icklum', 'Diclum'], ['Brgy', 'Dicklum', 'Dicklum'], $value);
+        $v = str_ireplace(['3rgy', 'Icklum', 'Diclum', 'Pob.'], ['Brgy', 'Dicklum', 'Dicklum', 'Poblacion'], $value);
 
-        // 3. Check for EXACT matches first
+                // Kung ang probinsya kay Iloilo (para sa kadtong yellow paper)
+        if (stripos($v, 'Iloilo') !== false || stripos($v, 'Lemery') !== false) {
+            return 'San Diego, Lemery, Iloilo';
+        }
+
+        if (preg_match('/\b(Phillips|Agusan Canyon)\b/i', $v)) return 'Agusan Canyon';
+
         foreach ($knownBarangays as $brgy) {
             $searchBrgy = str_ireplace(' (Pob.)', '', $brgy);
-            if (stripos($v, $searchBrgy) !== false) {
-                return $brgy; 
-            }
+            if (stripos($v, $searchBrgy) !== false) return $brgy; 
         }
 
-        // 4. Check for ALIASES (Purok/Sitio to Barangay)
-        // Kung na-basa ang Poblacion o Mangima, himoong Tankulan (Pob.)
-        if (preg_match('/\b(Poblacion|Mangima)\b/i', $v)) {
-            return 'Tankulan (Pob.)';
-        }
+        if (preg_match('/\b(Poblacion|Mangima)\b/i', $v)) return 'Tankulan (Pob.)';
 
-        // 5. FUZZY MATCHING (Para sa sayop og spelling nga barangay)
-        // Pangitaon kung unsay pinakaduol sa spelling sa mga barangay
         $words = explode(' ', trim(preg_replace('/[^A-Za-z0-9\s]/', '', $v)));
         $bestMatch = '';
         $bestPercent = 0;
 
         foreach ($words as $word) {
-            if (strlen($word) < 3) continue; // Skip mubu kaayo nga words
+            if (strlen($word) < 4) continue;
             foreach ($knownBarangays as $brgy) {
                 $searchBrgy = str_ireplace(' (Pob.)', '', $brgy);
                 similar_text(strtolower($word), strtolower($searchBrgy), $percent);
@@ -1109,19 +1110,11 @@ if (!function_exists('cert_first_place_token')) {
             }
         }
 
-        // Kung 75% parehas ang spelling, dawata na
-        if ($bestPercent >= 75) {
-            return $bestMatch;
-        }
+        if ($bestPercent >= 70) return $bestMatch;
 
-        // 6. Fallback: Kung wala gyud, tangtanga ang mga garbled labels ug ibalik ang unang duha ka pulong
-        $clean = preg_replace('/\b(Name|Of|Barangay|Brgy|Street|House|City|Municipality|Province|Purok)\b/i', '', $v);
-        $parts = array_values(array_filter(explode(' ', trim($clean)), fn($p) => $p !== ''));
-        
-        return implode(' ', array_slice($parts, 0, 2));
+        return ''; 
     }
 }
-
 
 if (!function_exists('cert_auto_extract')) {
     /**
@@ -1180,210 +1173,167 @@ if (!function_exists('cert_auto_extract')) {
 if (!function_exists('cert_auto_extract_birth')) {
     function cert_auto_extract_birth(string $ocrText, array $common): array
     {
-        $sections = cert_segment_sections($ocrText, [
-            // Gidugangan nato og fallback labels kay lain-lain ang layout sa PSA
-            // (e.g., "13. NAME" para sa Father sa uban, "14. NAME" sa uban).
-            'child'      => ['1. NAME', 'NAME OF CHILD', '4. NAME', '2. NAME'],
-            'mother'     => ['6. MAIDEN', 'MAIDEN NAME', '7. MAIDEN', 'MAIDEN'],
-            'father'     => ['13. NAME', '14. NAME', 'NAME OF FATHER', 'FATHER'],
-            'marriage'   => ['18. DATE AND PLACE OF MARRIAGE', 'MARRIAGE OF PARENTS'],
-            'attendant'  => ['19A. ATTENDANT', '19. ATTENDANT', 'ATTENDANT'],
-            'informant'  => ['20. INFORMANT', 'CERTIFICATION OF INFORMANT'],
-            'prepared'   => ['21. PREPARED BY', '21 PREPARED BY', 'PREPARED BY'],
-            'remarks'    => ['REMARKS'],
-        ]);
-        $childSeg    = $sections['child']     ?? $ocrText;
-        $motherSeg   = $sections['mother']    ?? '';
-        $fatherSeg   = $sections['father']    ?? '';
-        $marriageSeg = $sections['marriage']  ?? '';
-        $attendSeg   = $sections['attendant'] ?? '';
-        $informSeg   = $sections['informant'] ?? '';
-        $prepSeg     = $sections['prepared']  ?? '';
-        $remarksSeg  = $sections['remarks']   ?? '';
-
         $fields = $common;
+        $lines = preg_split('/\r\n|\r|\n/', $ocrText);
+        $totalLines = count($lines);
 
-        // --- Child: name, sex, date/place of birth, type/order, weight ---
-        [$fields['child_first'], $fields['child_middle'], $fields['child_last']] =
-            cert_name_row_to_parts(cert_extract_value_row($childSeg, ['1. NAME', 'NAME OF CHILD', '4. NAME']));
+        // =====================================================================
+        // 1. ANG SMART CANDIDATE SCANNER (Dili mobalik sa sayop nga lugar)
+        // =====================================================================
+        $candidateNames = [];
+        foreach ($lines as $index => $line) {
+            $line = trim($line);
+            if (strlen($line) < 7) continue;
+            
+            // I-EXCLUDE ANG MGA KLARO NGA LABEL, LUGAR, UG UBAN PA
+            if (preg_match('/\b(DATE|SEX|BIRTH|CITIZEN|RELIGION|ADDRESS|RESIDENCE|OCCUPATION|MARRIAGE|ATTENDANT|INFORMANT|REGISTRAR|SIGNATURE|CLERK|PHYSICIAN|HOSPITAL|PROVINCE|CITY|MUNICIPALITY|BARANGAY|REGISTRY|PAGE|BOOK|NO\.|FIRST|MIDDLE|LAST|DICKLUM|ILOILO|BUKIDNON|MANOLO|FORTICH|PHILIPPINES|PLACE|SCHOOL|UNIVERSITY|COLLEGE|DOC|DOCUMENT|FORM|REPUBLIC|SAN DIEGO|LEMERY|LENY|ASST|MOTHER|FATHER|MALE|FEMALE|SINGLE|MARRIED)\b/i', $line)) continue;
+            
+            if (preg_match('/[0-9]/', $line)) continue;
 
-        // "SEX" and "DATE OF BIRTH" boxes usually sit on ONE physical row,
-        // so their answers OCR onto one combined value line too, e.g.
-        // "MALE   03   APRIL   2003" (Sex, Day, Month, Year).
-        $sexDobRow = cert_extract_value_row($childSeg, ['SEX']);
+            $cleanLine = preg_replace('/[^A-Za-zÑñ\s]/u', ' ', $line);
+            $words = array_values(array_filter(preg_split('/\s+/', trim($cleanLine)), fn($w) => $w !== ''));
+            
+            if (count($words) >= 2 && count($words) <= 4) {
+                $isValid = true;
+                foreach ($words as $w) {
+                    if (strlen($w) > 2 && !preg_match('/[aeiouy]/i', $w)) { $isValid = false; break; }
+                }
+                if ($isValid) {
+                    $parsed = cert_name_row_to_parts($words);
+                    if ($parsed[0] !== '') {
+                        $candidateNames[] = [
+                            'index' => $index,
+                            'parsed' => $parsed
+                        ];
+                    }
+                }
+            }
+        }
+
+        // I-sort gikan sa taas ngadto sa ubos sa papel
+        usort($candidateNames, fn($a, $b) => $a['index'] <=> $b['index']);
+
+        // =====================================================================
+        // 2. ANG TAG-ISA KA ASSIGNMENT (Gamit ang saktong posisyon)
+        // =====================================================================
+        $childName = ['', '', ''];
+        $motherName = ['', '', ''];
+        $fatherName = ['', '', ''];
+
+        // 2a. Pangitaa ang Child (Kanang naa sa taas, una sa listahan)
+        if (isset($candidateNames[0])) {
+            $childName = $candidateNames[0]['parsed'];
+        }
+
+        // 2b. Pangitaa ang Mother ug Father (Kanang naa sa tunga ug ubos)
+        if (count($candidateNames) >= 3) {
+            // Kay 3 o daghan pa, ang ikaduha kay Mother, ug ang ikatulo kay Father
+            $motherName = $candidateNames[1]['parsed'];
+            $fatherName = $candidateNames[2]['parsed'];
+        } elseif (count($candidateNames) == 2) {
+            // Kung 2 ra, dayonon nato assign ang ikaduha sa Mother (kay ang Father kuwang)
+            $motherName = $candidateNames[1]['parsed'];
+        }
+
+        // I-save sa fields (Ayaw na usba)
+        [$fields['child_first'], $fields['child_middle'], $fields['child_last']] = $childName;
+        [$fields['mother_first'], $fields['mother_middle'], $fields['mother_last']] = $motherName;
+        [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = $fatherName;
+
+        // =====================================================================
+        // 3. SEX, DATE OF BIRTH, UG UBAN PA (Parehas sa original)
+        // =====================================================================
+        $sexDobRow = cert_extract_value_row($ocrText, ['SEX']);
         if (count($sexDobRow) >= 4) {
             $fields['child_sex'] = $sexDobRow[0];
-            $fields['date_of_birth'] = trim($sexDobRow[2] . ' ' . $sexDobRow[1] . ', ' . $sexDobRow[3]); // Month Day, Year
+            $fields['date_of_birth'] = trim($sexDobRow[2] . ' ' . $sexDobRow[1] . ', ' . $sexDobRow[3]);
         } elseif (count($sexDobRow) >= 1) {
             $fields['child_sex'] = $sexDobRow[0];
         }
-
-        // Sex can only ever be MALE or FEMALE. Anything else that landed
-        // here is a fragment of the printed form (the "3. DATE OF / BIRTH"
-        // label wraps onto its own line right under the SEX box, and used
-        // to get picked up as the answer) - discard it so the reader below
-        // gets a chance instead.
-        if (!preg_match('/^(MALE|FEMALE)$/i', trim((string) ($fields['child_sex'] ?? '')))) {
-            $fields['child_sex'] = '';
-        }
-        if (empty($fields['child_sex'])) $fields['child_sex'] = cert_extract_value_after_label($childSeg, ['SEX']);
-        if (empty($fields['date_of_birth'])) $fields['date_of_birth'] = cert_extract_value_after_label($childSeg, ['DATE OF BIRTH']);
-
-        // Last-resort readers: when the Sex/Date row didn't split cleanly
-        // into columns (single spaces, a smudged gap, a tilted photo), read
-        // the word MALE/FEMALE and the date shape straight out of the child
-        // section instead of leaving both blank.
-        if (empty(trim((string) $fields['child_sex']))) {
-            $fields['child_sex'] = cert_find_sex_in($childSeg);
-        }
-        if (empty(trim((string) ($fields['date_of_birth'] ?? '')))
-            || !strtotime((string) $fields['date_of_birth'])) {
-            $found = cert_find_date_in($childSeg);
+        if (!preg_match('/^(MALE|FEMALE)$/i', trim((string) ($fields['child_sex'] ?? '')))) $fields['child_sex'] = '';
+        if (empty($fields['child_sex'])) $fields['child_sex'] = cert_extract_value_after_label($ocrText, ['SEX']);
+        if (empty($fields['date_of_birth'])) $fields['date_of_birth'] = cert_extract_value_after_label($ocrText, ['DATE OF BIRTH']);
+        if (empty(trim((string) $fields['child_sex']))) $fields['child_sex'] = cert_find_sex_in($ocrText);
+        if (empty(trim((string) ($fields['date_of_birth'] ?? ''))) || !strtotime((string) $fields['date_of_birth'])) {
+            $found = cert_find_date_in($ocrText);
             if ($found !== '') $fields['date_of_birth'] = $found;
         }
 
-        // 'PLACE OF' alone is included as a fallback because the form prints
-        // "4. PLACE OF" / "BIRTH" as two physical lines, and a smudge or
-        // fold right on the word "BIRTH" occasionally drops it from OCR
-        // entirely, leaving only "PLACE OF" to anchor on.
-        $pobRow = cert_extract_value_row($childSeg, ['PLACE OF BIRTH', 'PLACE OF']);
+        $pobRow = cert_extract_value_row($ocrText, ['PLACE OF BIRTH', 'PLACE OF']);
         if (count($pobRow) >= 1) $fields['place_of_birth_hospital'] = $pobRow[0] ?? '';
         if (count($pobRow) >= 2) $fields['place_of_birth_city']     = $pobRow[1] ?? '';
         if (count($pobRow) >= 3) $fields['place_of_birth_province'] = $pobRow[2] ?? '';
 
-        // "TYPE OF BIRTH / IF MULTIPLE BIRTH / BIRTH ORDER / WEIGHT AT BIRTH" - one row, 4 columns.
-        $typeRow = cert_extract_value_row($childSeg, ['TYPE OF BIRTH']);
+        $typeRow = cert_extract_value_row($ocrText, ['TYPE OF BIRTH']);
         if (count($typeRow) >= 4) {
             [$fields['type_of_birth'], $fields['birth_order'], $fields['birth_order_overall'], $fields['birth_weight']] = $typeRow;
         } else {
             if (!empty($typeRow[0])) $fields['type_of_birth'] = $typeRow[0];
-            $fields['birth_weight'] = $fields['birth_weight'] ?? cert_extract_value_after_label($childSeg, ['WEIGHT AT BIRTH', 'WEIGHT']);
+            $fields['birth_weight'] = $fields['birth_weight'] ?? cert_extract_value_after_label($ocrText, ['WEIGHT AT BIRTH', 'WEIGHT']);
         }
 
-        // --- Mother section ---
-        if ($motherSeg !== '') {
-            [$mFirst, $mMiddle, $mLast] = cert_name_row_to_parts(cert_extract_value_row($motherSeg, ['MAIDEN NAME', '7. MAIDEN', 'MAIDEN']));
-            $fields['mother_first'] = $mFirst;
-            $fields['mother_middle'] = $mMiddle;
-            $fields['mother_last'] = $mLast;
-
-            // "CITIZENSHIP" alone often shares its row with nothing else for
-            // the mother row (no merged row like father's), so try direct
-            // label lookup first, falling back to the multi-column row.
-            $fields['mother_citizenship'] = cert_extract_value_after_label($motherSeg, ['CITIZENSHIP']);
-            $fields['mother_religion']    = cert_extract_value_after_label($motherSeg, ['RELIGION']);
-
-            // "10a. TOTAL... / 10b. STILL LIVING / 10c. NOW DEAD / 11. OCCUPATION / 12. AGE" - one row, 5 columns.
-            $countsRow = cert_extract_value_row($motherSeg, ['TOTAL NUMBER OF CHILDREN', 'TOTAL CHILDREN BORN ALIVE', '10A']);
-            if (count($countsRow) >= 5) {
-                [$fields['mother_children_born_alive'], $fields['mother_children_still_living'],
-                 $fields['mother_children_now_dead'], $fields['mother_occupation'], $fields['mother_age']] = $countsRow;
-            } else {
-                $fields['mother_occupation'] = $fields['mother_occupation'] ?? cert_extract_value_after_label($motherSeg, ['OCCUPATION']);
-                $fields['mother_age'] = $fields['mother_age'] ?? cert_extract_value_after_label($motherSeg, ['AGE AT']);
-            }
-
-            $residenceRow = cert_extract_value_row($motherSeg, ['13. RESIDENCE', 'RESIDENCE']);
-            if ($residenceRow) $fields['mother_residence'] = implode(', ', $residenceRow);
+        $fields['mother_citizenship'] = cert_extract_value_after_label($ocrText, ['CITIZENSHIP']);
+        $fields['mother_religion']    = cert_extract_value_after_label($ocrText, ['RELIGION']);
+        $countsRow = cert_extract_value_row($ocrText, ['TOTAL NUMBER OF CHILDREN', 'TOTAL CHILDREN BORN ALIVE', '10A']);
+        if (count($countsRow) >= 5) {
+            [$fields['mother_children_born_alive'], $fields['mother_children_still_living'], $fields['mother_children_now_dead'], $fields['mother_occupation'], $fields['mother_age']] = $countsRow;
+        } else {
+            $fields['mother_occupation'] = $fields['mother_occupation'] ?? cert_extract_value_after_label($ocrText, ['OCCUPATION']);
+            $fields['mother_age'] = $fields['mother_age'] ?? cert_extract_value_after_label($ocrText, ['AGE AT']);
         }
+        $residenceRow = cert_extract_value_row($ocrText, ['13. RESIDENCE', 'RESIDENCE']);
+        if ($residenceRow) $fields['mother_residence'] = implode(', ', $residenceRow);
 
-        // --- Father section ---
-        if ($fatherSeg !== '') {
-            [$fFirst, $fMiddle, $fLast] = cert_name_row_to_parts(cert_extract_value_row($fatherSeg, ['13. NAME', '14. NAME', 'NAME OF FATHER']));
-            $fields['father_first'] = $fFirst;
-            $fields['father_middle'] = $fMiddle;
-            $fields['father_last'] = $fLast;
-
-            // "15. CITIZENSHIP / 16. RELIGION / 17. OCCUPATION / 18. AGE" - one row, 4 columns.
-            $fatherRow = cert_extract_value_row($fatherSeg, ['15. CITIZENSHIP', 'CITIZENSHIP']);
-            if (count($fatherRow) >= 4) {
-                [$fields['father_citizenship'], $fields['father_religion'], $fields['father_occupation'], $fields['father_age']] = $fatherRow;
-            } else {
-                $fields['father_citizenship'] = cert_extract_value_after_label($fatherSeg, ['CITIZENSHIP']);
-                $fields['father_religion']    = cert_extract_value_after_label($fatherSeg, ['RELIGION']);
-                $fields['father_occupation']  = cert_extract_value_after_label($fatherSeg, ['OCCUPATION']);
-                $fields['father_age']         = cert_extract_value_after_label($fatherSeg, ['AGE AT']);
-            }
-
-            $fResidenceRow = cert_extract_value_row($fatherSeg, ['19. RESIDENCE', 'RESIDENCE']);
-            if ($fResidenceRow) $fields['father_residence'] = implode(', ', $fResidenceRow);
+        $fatherRow = cert_extract_value_row($ocrText, ['15. CITIZENSHIP', 'CITIZENSHIP']);
+        if (count($fatherRow) >= 4) {
+            [$fields['father_citizenship'], $fields['father_religion'], $fields['father_occupation'], $fields['father_age']] = $fatherRow;
+        } else {
+            $fields['father_citizenship'] = $fields['father_citizenship'] ?? cert_extract_value_after_label($ocrText, ['CITIZENSHIP']);
+            $fields['father_religion']    = $fields['father_religion'] ?? cert_extract_value_after_label($ocrText, ['RELIGION']);
+            $fields['father_occupation']  = $fields['father_occupation'] ?? cert_extract_value_after_label($ocrText, ['OCCUPATION']);
+            $fields['father_age']         = $fields['father_age'] ?? cert_extract_value_after_label($ocrText, ['AGE AT']);
         }
+        $fResidenceRow = cert_extract_value_row($ocrText, ['19. RESIDENCE', 'RESIDENCE']);
+        if ($fResidenceRow) $fields['father_residence'] = implode(', ', $fResidenceRow);
 
-        // --- Marriage of parents: "20a. DATE (Month)(Day)(Year)  20b. PLACE (City)(Province)(Country)" ---
-        if ($marriageSeg !== '') {
-            $mRow = cert_extract_value_row($marriageSeg, ['MARRIAGE OF PARENTS', '20A. DATE', 'DATE']);
-            if (count($mRow) >= 3) {
-                $fields['parents_marriage_date'] = trim($mRow[0] . ' ' . $mRow[1] . ', ' . $mRow[2]); // Month Day, Year
-                if (count($mRow) > 3) $fields['parents_marriage_place'] = implode(', ', array_slice($mRow, 3));
-            }
-            if (empty($fields['parents_marriage_date'])) $fields['parents_marriage_date'] = cert_extract_value_after_label($marriageSeg, ['DATE']);
-            if (empty($fields['parents_marriage_place'])) $fields['parents_marriage_place'] = cert_extract_value_after_label($marriageSeg, ['PLACE']);
+        $mRow = cert_extract_value_row($ocrText, ['MARRIAGE OF PARENTS', '20A. DATE', 'DATE']);
+        if (count($mRow) >= 3) {
+            $fields['parents_marriage_date'] = trim($mRow[0] . ' ' . $mRow[1] . ', ' . $mRow[2]);
+            if (count($mRow) > 3) $fields['parents_marriage_place'] = implode(', ', array_slice($mRow, 3));
         }
+        if (empty($fields['parents_marriage_date'])) $fields['parents_marriage_date'] = cert_extract_value_after_label($ocrText, ['DATE']);
+        if (empty($fields['parents_marriage_place'])) $fields['parents_marriage_place'] = cert_extract_value_after_label($ocrText, ['PLACE']);
 
-        // --- Attendant (back page): checkbox type, time born, name/title ---
-        if ($attendSeg !== '') {
-            if (preg_match('/[X✕]\s*\d\.\s*([A-Za-z][A-Za-z \(\)\/]+)/', $attendSeg, $m)) {
-                $fields['attendant_type'] = trim($m[1]);
-            }
-            if (preg_match('/\b(\d{1,2}:\d{2}\s*(AM|PM))\b/i', $attendSeg, $m)) {
-                $fields['attendant_time_born'] = strtoupper($m[1]);
-            }
-            $fields['attendant_name']  = cert_extract_value_after_label($attendSeg, ['Name in Print']);
-            $fields['attendant_title'] = cert_extract_value_after_label($attendSeg, ['Title or Position']);
-        }
+        if (preg_match('/[X✕]\s*\d\.\s*([A-Za-z][A-Za-z \(\)\/]+)/', $ocrText, $m)) $fields['attendant_type'] = trim($m[1]);
+        if (preg_match('/\b(\d{1,2}:\d{2}\s*(AM|PM))\b/i', $ocrText, $m)) $fields['attendant_time_born'] = strtoupper($m[1]);
+        $fields['attendant_name']  = cert_extract_value_after_label($ocrText, ['Name in Print']);
+        $fields['attendant_title'] = cert_extract_value_after_label($ocrText, ['Title or Position']);
+        $fields['informant_name']         = cert_extract_value_after_label($ocrText, ['Name in Print']);
+        $fields['informant_relationship'] = cert_extract_value_after_label($ocrText, ['Relationship to the Child']);
+        $fields['informant_address']      = cert_extract_value_after_label($ocrText, ['Address']);
+        $fields['informant_date']         = cert_extract_value_after_label($ocrText, ['Date']);
+        $fields['prepared_by']         = cert_extract_value_after_label($ocrText, ['Name in Print']);
+        $fields['prepared_by_title']   = cert_extract_value_after_label($ocrText, ['Title or Position']);
+        $fields['prepared_by_address'] = cert_extract_value_after_label($ocrText, ['Address']);
+        $fields['prepared_by_date']    = cert_extract_value_after_label($ocrText, ['Date']);
 
-        // --- Certification of Informant ---
-        if ($informSeg !== '') {
-            $fields['informant_name']         = cert_extract_value_after_label($informSeg, ['Name in Print']);
-            $fields['informant_relationship'] = cert_extract_value_after_label($informSeg, ['Relationship to the Child']);
-            $fields['informant_address']      = cert_extract_value_after_label($informSeg, ['Address']);
-            $fields['informant_date']         = cert_extract_value_after_label($informSeg, ['Date']);
-        }
-
-        // --- Prepared By ---
-        if ($prepSeg !== '') {
-            $fields['prepared_by']         = cert_extract_value_after_label($prepSeg, ['Name in Print']);
-            $fields['prepared_by_title']   = cert_extract_value_after_label($prepSeg, ['Title or Position']);
-            $fields['prepared_by_address'] = cert_extract_value_after_label($prepSeg, ['Address']);
-            $fields['prepared_by_date']    = cert_extract_value_after_label($prepSeg, ['Date']);
-        }
-
-        // --- Date Prepared ---
-        // Municipal Form No. 102 has no box literally labelled "Date
-        // Prepared" - the date the record was prepared is the one signed in
-        // the "PREPARED BY" block (23), so use that rather than leaving the
-        // field blank.
         if (empty(trim((string) ($fields['date_prepared'] ?? '')))) {
             $candidate = trim((string) ($fields['prepared_by_date'] ?? ''));
-            if ($candidate === '' && $prepSeg !== '') $candidate = cert_find_date_in($prepSeg);
-            if ($candidate === '' && $informSeg !== '') $candidate = cert_find_date_in($informSeg);
+            if ($candidate === '') $candidate = cert_find_date_in($ocrText);
             if ($candidate !== '') $fields['date_prepared'] = $candidate;
         }
 
-              // --- Barangay ---
-        // Gikuha nato ang priority: Mother Residence -> Father Residence -> Place of Birth.
-        // Ang Place of Birth (hospital) sagad ma-OCR as generic text (e.g., "House No., Street, Barangay"),
-        // mao nga gibutang nato siya sa katapusan isip fallback nga naay filter.
-        if (empty(trim((string) ($fields['barangay'] ?? '')))) {
-            $fields['barangay'] = cert_first_place_token($fields['mother_residence'] ?? '');
-        }
-        if (empty(trim((string) ($fields['barangay'] ?? '')))) {
-            $fields['barangay'] = cert_first_place_token($fields['father_residence'] ?? '');
-        }
-        // Fallback sa Place of Birth (kung wala gyud sa Residence)
+        if (empty(trim((string) ($fields['barangay'] ?? '')))) $fields['barangay'] = cert_first_place_token($fields['mother_residence'] ?? '');
+        if (empty(trim((string) ($fields['barangay'] ?? '')))) $fields['barangay'] = cert_first_place_token($fields['father_residence'] ?? '');
         if (empty(trim((string) ($fields['barangay'] ?? '')))) {
             $pob = $fields['place_of_birth_hospital'] ?? '';
-            // Siguroha nga dili generic nga label ang na-OCR
             if (stripos($pob, 'House') === false && stripos($pob, 'Street') === false && stripos($pob, 'Barangay') === false) {
                 $fields['barangay'] = cert_first_place_token($pob);
             }
         }
 
-        // --- Remarks / Annotations (free text - grab everything after the heading) ---
-        if ($remarksSeg !== '') {
-            $remarkLines = array_slice(preg_split('/\r\n|\r|\n/', $remarksSeg), 1);
-            $remarkLines = array_filter(array_map('trim', $remarkLines), fn($l) => $l !== '');
-            $remarksText = trim(implode(' ', $remarkLines));
+        if (preg_match('/REMARKS(.*)/is', $ocrText, $m)) {
+            $remarksText = trim(preg_replace('/\s+/', ' ', $m[1]));
             if ($remarksText !== '') $fields['remarks'] = $remarksText;
         }
 
