@@ -1286,7 +1286,7 @@ if (!function_exists('cert_auto_extract_birth')) {
             [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = cert_name_row_to_parts($fRow);
 
             if ($nameIncomplete($fields['father_first'], $fields['father_last'])) {
-                $exclude = [$fields['child_first'], $fields['child_last'], $fields['mother_first'], $fields['mother_last']];
+                $exclude = [$fields['child_first'], $fields['child_last'], $fields['mother_first'] ?? '', $fields['mother_last'] ?? ''];
                 $fb = $findFallbackName($fatherSeg, $exclude);
                 if (!$nameIncomplete($fb[0], $fb[2]) || $fields['father_first'] === '') {
                     [$fields['father_first'], $fields['father_middle'], $fields['father_last']] = $fb;

@@ -209,6 +209,11 @@ window.CertOcrClient = (function () {
     return Math.round(words * ((data && data.confidence) || 0) / 100);
   }
 
+  // Measured end-to-end (OCR -> field extraction, 3 real certificates): plain 2400px = 9.2/15,
+  // plain 1800px = 8.0/15, enhanced 2nd pass = 5.7-7.2/15. The enhanced text reads more words but
+  // its line layout breaks the field extractor, so the 2nd pass is OFF. Code kept for later use.
+  var ENABLE_ENHANCED_PASS = false;
+  var PLAIN_MAX_DIM = 2400;
   var ENHANCE_BELOW = 65;   // plain pass with mean confidence under this -> try the enhanced 2nd pass
   var ENHANCE_MAX_DIM = 2600; // enhanced pass needs near-full resolution (tested: 1800px loses the small print)
   var MIN_SOLID_WORDS = 30; // fewer solid words than this = nothing usable was read
@@ -228,8 +233,8 @@ window.CertOcrClient = (function () {
   /** Plain pass first; only if it looks unreliable, an enhanced 2nd pass - keep whichever read more solid words. */
   async function recognizeOne(slot, worker, file) {
     slot.phase = 'reading';
-    var best = await ocrPass(worker, await downscale(file, 1800), '3');
-    if (best.confidence < ENHANCE_BELOW) {
+    var best = await ocrPass(worker, await downscale(file, PLAIN_MAX_DIM), '3');
+    if (ENABLE_ENHANCED_PASS && best.confidence < ENHANCE_BELOW) {
       slot.phase = 'enhancing';
       try {
         var enhancedImage = await enhance(file, ENHANCE_MAX_DIM);

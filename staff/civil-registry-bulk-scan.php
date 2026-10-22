@@ -113,6 +113,14 @@ require_once __DIR__ . '/includes/staff-header.php';
   #bulkTable .bulkThumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }
   #bulkTable tr.bulk-row-error input { border-color: #d9534f; }
   #bulkTable tr.bulk-row-saved { opacity: 0.55; }
+  .bulkThumb { cursor: zoom-in; }
+  .bulk-retry-btn { display: block; margin-top: 4px; padding: 2px 8px; font-size: 12px; border: 1px solid #999; border-radius: 4px; background: #fff; cursor: pointer; }
+  #bulkViewer { display: none; position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.82); flex-direction: column; }
+  #bulkViewer .bv-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; color: #fff; font-size: 13px; }
+  #bulkViewer .bv-close { background: #fff; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  #bulkViewer .bv-stage { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
+  #bulkViewer img { max-width: 100%; max-height: calc(100vh - 70px); object-fit: contain; cursor: zoom-in; }
+  #bulkViewer img.bv-zoom { max-width: none; max-height: none; width: 180%; cursor: zoom-out; }
   .bulk-remove-btn { background: none; border: none; color: #d9534f; font-size: 16px; cursor: pointer; line-height: 1; }
   .bulk-row-status { font-size: 11px; margin-top: 4px; }
 </style>
@@ -249,6 +257,26 @@ require_once __DIR__ . '/includes/staff-header.php';
     tableHead.innerHTML = html;
   }
 
+  /** Full-screen viewer for a row's certificate photo (click the thumbnail). Click the image to zoom, Esc to close. */
+  function openViewer(src) {
+    var ov = document.getElementById('bulkViewer');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'bulkViewer';
+      ov.innerHTML = '<div class="bv-bar"><span>Click the image to zoom in/out &middot; Esc to close</span>' +
+        '<button type="button" class="bv-close">&#10005; Close</button></div>' +
+        '<div class="bv-stage"><img alt="Certificate photo"></div>';
+      document.body.appendChild(ov);
+      var closeViewer = function () { ov.style.display = 'none'; ov.querySelector('img').classList.remove('bv-zoom'); };
+      ov.querySelector('.bv-close').addEventListener('click', closeViewer);
+      ov.addEventListener('click', function (e) { if (e.target === ov || e.target.classList.contains('bv-stage')) closeViewer(); });
+      ov.querySelector('img').addEventListener('click', function () { this.classList.toggle('bv-zoom'); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ov.style.display !== 'none') closeViewer(); });
+    }
+    ov.querySelector('img').src = src;
+    ov.style.display = 'flex';
+  }
+
   function renderRow(row) {
     var cols = COLUMNS[currentType()];
     var tr = document.createElement('tr');
@@ -258,6 +286,8 @@ require_once __DIR__ . '/includes/staff-header.php';
     var img = document.createElement('img');
     img.className = 'bulkThumb';
     img.src = row.previewUrl;
+    img.title = 'Click to view the full certificate';
+    img.addEventListener('click', function () { openViewer(row.previewUrl); });
     thumbTd.appendChild(img);
     tr.appendChild(thumbTd);
 
@@ -304,6 +334,19 @@ require_once __DIR__ . '/includes/staff-header.php';
     statusDiv.id = 'bulkstatus-' + row.id;
     statusDiv.textContent = row.status || '';
     statusTd.appendChild(statusDiv);
+    if (row.failed && row.file) {
+      var retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'bulk-retry-btn';
+      retryBtn.textContent = '↻ Retry';
+      retryBtn.addEventListener('click', function () {
+        row.status = 'Waiting...';
+        row.failed = false;
+        rerenderAll();
+        runScan(row, row.file);
+      });
+      statusTd.appendChild(retryBtn);
+    }
     var removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'bulk-remove-btn';
@@ -374,10 +417,24 @@ require_once __DIR__ . '/includes/staff-header.php';
    *  row is fully updated - used by the CONCURRENCY-wide runner below. */
   function scanOnePhoto(file) {
     var id = ++rowSeq;
-    var row = { id: id, fields: {}, status: 'Waiting...', previewUrl: URL.createObjectURL(file) };
+    var row = { id: id, fields: {}, status: 'Waiting...', previewUrl: URL.createObjectURL(file), file: file };
     rows.push(row);
     renderRow(row);
     rowCountEl.textContent = rows.length;
+    return runScan(row, file);
+  }
+
+  /** Marks a row as failed WITH the real reason, and re-draws it so its Retry button shows. */
+  function failRow(row, msg) {
+    row.status = 'Scan failed: ' + msg;
+    row.failed = true;
+    rerenderAll();
+  }
+
+  /** Reads the photo + uploads it + fills the row. Used for the first scan AND for Retry. */
+  function runScan(row, file) {
+    var id = row.id;
+    row.failed = false;
 
     // Read the photo IN THE BROWSER first (fast - downscaled before OCR,
     // and running alongside up to CONCURRENCY-1 other photos at the same
@@ -415,7 +472,22 @@ require_once __DIR__ . '/includes/staff-header.php';
 
       return fetch('civil-registry-scan-inline.php', { method: 'POST', body: fd });
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        // Read as text first, so that a non-JSON reply (login page after the session expired, a PHP
+        // error page, an empty reply) is reported for what it is - not as a vague "network error".
+        return r.text().then(function (txt) {
+          var parsed = null;
+          try { parsed = JSON.parse(txt); } catch (e) { /* not JSON */ }
+          if (parsed) return parsed;
+          console.error('Bulk scan: reply was not JSON. HTTP ' + r.status + ' ' + r.url + ' | first 500 chars:', txt.slice(0, 500));
+          if ((r.redirected && /login\.php/i.test(r.url)) || (/<form/i.test(txt) && /password/i.test(txt))) {
+            return { ok: false, error: 'your login session ended - please log in again, then press Retry.' };
+          }
+          if (!txt.trim()) return { ok: false, error: 'the server sent an empty reply (HTTP ' + r.status + ').' };
+          return { ok: false, error: 'the server sent an unreadable reply (HTTP ' + r.status + '): ' +
+            txt.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) };
+        });
+      })
       .then(function (data) {
         var statusDiv = document.getElementById('bulkstatus-' + id);
         if (data && data.ok) {
@@ -453,14 +525,12 @@ require_once __DIR__ . '/includes/staff-header.php';
           rerenderAll();
           saveDraft(); // this row is now fully uploaded+scanned - safe to persist
         } else {
-          row.status = 'Scan failed: ' + ((data && data.error) || 'unknown error');
-          if (statusDiv) statusDiv.textContent = row.status;
+          failRow(row, (data && data.error) || 'unknown error');
         }
       })
-      .catch(function () {
-        var statusDiv = document.getElementById('bulkstatus-' + id);
-        row.status = 'Scan failed (network error)';
-        if (statusDiv) statusDiv.textContent = row.status;
+      .catch(function (err) {
+        console.error('Bulk scan error for row ' + id + ':', err);
+        failRow(row, 'could not complete (' + String((err && err.message) || err) + ').');
       });
   }
 

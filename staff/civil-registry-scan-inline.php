@@ -45,6 +45,20 @@
  *   or { ok:false, error }
  */
 
+// Anything PHP prints by accident (a warning/notice) or a fatal error must NEVER break the JSON
+// reply - the browser would only be able to say "network error". Buffer all output; respond()
+// throws the stray text away (it goes to the PHP error log instead).
+ob_start();
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        while (ob_get_level() > 0) ob_end_clean();
+        if (!headers_sent()) header('Content-Type: application/json');
+        error_log('scan-inline fatal: ' . $e['message'] . ' @ ' . $e['file'] . ':' . $e['line']);
+        echo json_encode(['ok' => false, 'error' => 'Server error while scanning: ' . substr($e['message'], 0, 200)], JSON_UNESCAPED_UNICODE);
+    }
+});
+
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/includes/name-format.php';
 require_once __DIR__ . '/lib/CertificateFormFields.php';
@@ -56,7 +70,14 @@ header('Content-Type: application/json');
 
 function respond(array $data): void
 {
-    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    $stray = '';
+    while (ob_get_level() > 0) $stray .= ob_get_clean();
+    if (trim($stray) !== '') error_log('scan-inline stray output discarded: ' . substr(trim($stray), 0, 500));
+    // INVALID_UTF8_SUBSTITUTE: OCR garbage can contain broken UTF-8; without this json_encode()
+    // returns false and the reply would be EMPTY.
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    if ($json === false) $json = json_encode(['ok' => false, 'error' => 'Could not encode the scan result.']);
+    echo $json;
     exit;
 }
 
