@@ -139,6 +139,19 @@ if (!empty($_FILES['certificate_image2']) && $_FILES['certificate_image2']['erro
 
 $photoPaths = array_values(array_filter([$photo1['full'], $photo2['full'] ?? null]));
 $clientOcrText = trim($_POST['ocr_text_client'] ?? '');
+
+// Marriage only: the browser also sends, for a "typed text only" copy of the photo, every word WITH its
+// position (several variants). Used by the two-column layout reader (lib/MarriageTypedExtractor.php).
+$typedVariants = [];
+if ($type === 'marriage' && !empty($_POST['ocr_words'])) {
+    $decodedWords = json_decode((string) $_POST['ocr_words'], true);
+    if (is_array($decodedWords)) {
+        foreach ($decodedWords as $variant) {
+            if (is_array($variant) && count($variant) <= 5000) $typedVariants[] = $variant;
+        }
+        $typedVariants = array_slice($typedVariants, 0, 6);
+    }
+}
 $serverOcrAvailable = cert_ocr_available();
 
 // ---------------------------------------------------------------
@@ -164,6 +177,7 @@ $serverOcrAvailable = cert_ocr_available();
 //      staff to type the fields manually.
 // ---------------------------------------------------------------
 require_once __DIR__ . '/lib/YoloOcrClient.php';
+require_once __DIR__ . '/lib/MarriageTypedExtractor.php';
 $yoloFieldsRaw = yolo_scan_certificate($photo1['full'], $type);
 
 if ($yoloFieldsRaw !== null) {
@@ -181,8 +195,32 @@ if ($yoloFieldsRaw !== null) {
     $confidence = cert_adv_merge_field_sets($perPhotoFieldSets);
     $certFields = array_map(fn($f) => $f['value'], $confidence);
     $rawOcrText = trim(implode("\n", $rawOcrTextParts));
-} elseif ($clientOcrText !== '') {
-    $certFields = cert_auto_extract($type, $clientOcrText);
+} elseif ($clientOcrText !== '' || $typedVariants) {
+    $certFields = $clientOcrText !== '' ? cert_auto_extract($type, $clientOcrText) : [];
+    if ($typedVariants) {
+        $typed = cert_marriage_typed_extract($typedVariants);
+        if (!empty($typed['husband_dob']) || !empty($typed['wife_dob'])) {
+            // The layout reader understood this page. The text extractor was written for the other
+            // (row-by-row) layout and mixes up the two columns here, so drop its husband/wife guesses
+            // and keep only the general fields it is good at (registry no., municipality ...).
+            foreach (array_keys($certFields) as $ck) {
+                if (preg_match('/^(husband|wife)_/', $ck) || in_array($ck, ['place_of_marriage', 'date_of_marriage', 'time_of_marriage', 'solemnizing_officer_name', 'barangay'], true)) {
+                    unset($certFields[$ck]);
+                }
+            }
+            foreach ($typed as $tk => $tv) {
+                if (trim((string) $tv) === '') continue;
+                // the registry number is mostly a fallback: the plain full-page reading is usually clearer. The typed
+                // reading only replaces it when it is the same number with more digits ("2012-10" -> "2012-101").
+                if ($tk === 'registry_number') {
+                    $plainReg = trim((string) ($certFields['registry_number'] ?? ''));
+                    $typedReg = trim((string) $tv);
+                    if ($plainReg !== '' && !(strlen($typedReg) > strlen($plainReg) && strpos($typedReg, $plainReg) === 0)) continue;
+                }
+                $certFields[$tk] = $tv;
+            }
+        }
+    }
     $confidence = [];
     $rawOcrText = $clientOcrText;
 } elseif ($serverOcrAvailable) {

@@ -1,1 +1,1 @@
-Invalid Parameter - /..
+magick: invalid argument for option '-resize' ''2400x2400' at CLI arg 3 @ error/operation.c/CLISimpleOperatorImage/3277.

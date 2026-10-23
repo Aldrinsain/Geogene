@@ -74,7 +74,12 @@ window.CertOcrClient = (function () {
   /** Shrinks a photo to at most maxDim px on its longest side. Only affects
    *  the copy sent to Tesseract - callers keep uploading the ORIGINAL file
    *  for storage/printing. Falls back to the original file on any error. */
-  function downscale(file, maxDim) {
+  /**
+   * Scaled (never enlarged) copy of the photo as a JPEG Blob, optionally turned by deg = 0 / 90 / 180 / 270
+   * (clockwise). Returns the original file when nothing needs to change, or on any error.
+   */
+  function downscale(file, maxDim, deg) {
+    deg = deg || 0;
     return new Promise(function (resolve) {
       if (!file || !window.Image) { resolve(file); return; }
       var img = new Image();
@@ -83,12 +88,8 @@ window.CertOcrClient = (function () {
         try {
           var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
           var scale = Math.min(1, maxDim / Math.max(w, h));
-          if (scale >= 1) { URL.revokeObjectURL(url); resolve(file); return; }
-          var canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, Math.round(w * scale));
-          canvas.height = Math.max(1, Math.round(h * scale));
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          if (scale >= 1 && deg === 0) { URL.revokeObjectURL(url); resolve(file); return; }
+          var canvas = drawTurned(img, w, h, scale, deg);
           URL.revokeObjectURL(url);
           canvas.toBlob(function (blob) { resolve(blob || file); }, 'image/jpeg', 0.85);
         } catch (e) {
@@ -99,6 +100,20 @@ window.CertOcrClient = (function () {
       img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
       img.src = url;
     });
+  }
+
+  /** Draws the image scaled by `scale` and turned clockwise by deg (0/90/180/270) on a new canvas. */
+  function drawTurned(img, w, h, scale, deg) {
+    var sw = Math.max(1, Math.round(w * scale)), sh = Math.max(1, Math.round(h * scale));
+    var sideways = (deg === 90 || deg === 270);
+    var canvas = document.createElement('canvas');
+    canvas.width = sideways ? sh : sw;
+    canvas.height = sideways ? sw : sh;
+    var ctx = canvas.getContext('2d');
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(deg * Math.PI / 180);
+    ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+    return canvas;
   }
 
   // ------------------------------------------------------------------
@@ -209,6 +224,107 @@ window.CertOcrClient = (function () {
     return Math.round(words * ((data && data.confidence) || 0) / 100);
   }
 
+  // ------------------------------------------------------------------
+  // "Typed text only" copy of a photo (used for marriage certificates).
+  // On these forms the typed answers are black while the printed labels are light
+  // gray, and the two columns (HUSBAND | WIFE) overprint the labels. Keeping ONLY the
+  // dark pixels removes the printed labels, so what the OCR reads is the answers.
+  // Same recipe as ImageMagick's  -colorspace Gray -normalize -threshold T%
+  //   1. gray (Rec.709 luma)  2. stretch contrast: 2% darkest -> black, 1% brightest -> white (measured from ImageMagick)
+  //   3. black if value <= T% of the range, white otherwise.
+  // Pure function on {data (RGBA), width, height}, tested outside the browser.
+  // ------------------------------------------------------------------
+  function typedPixels(img, thresholdPct) {
+    var d = img.data, n = img.width * img.height, i;
+    var g = new Uint8ClampedArray(n);
+    var hist = new Uint32Array(256);
+    for (i = 0; i < n; i++) {
+      var v = Math.round(0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]);
+      g[i] = v; hist[v]++;
+    }
+    var lo = 0, hi = 255, acc = 0;
+    var blackCut = n * 0.02, whiteCut = n * 0.01; // 2% darkest -> black, 1% brightest -> white
+    for (i = 0; i < 256; i++) { acc += hist[i]; if (acc > blackCut) { lo = i; break; } }
+    acc = 0;
+    for (i = 255; i >= 0; i--) { acc += hist[i]; if (acc > whiteCut) { hi = i; break; } }
+    if (hi - lo < 16) { lo = 0; hi = 255; }
+    var span = hi - lo, limit = thresholdPct / 100 * 255;
+    for (i = 0; i < n; i++) {
+      var s2 = (g[i] - lo) * 255 / span;
+      var out = s2 > limit ? 255 : 0;
+      var p = i * 4;
+      d[p] = d[p + 1] = d[p + 2] = out;
+      d[p + 3] = 255;
+    }
+    return img;
+  }
+
+  /** PNG Blob of the typed-only copy (turned by deg, at most maxDim px on the long side), or null. */
+  function typedImage(file, deg, maxDim, thresholdPct) {
+    return new Promise(function (resolve) {
+      if (!file || !window.Image) { resolve(null); return; }
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          var canvas = drawTurned(img, w, h, Math.min(1, maxDim / Math.max(w, h)), deg || 0);
+          URL.revokeObjectURL(url);
+          var ctx = canvas.getContext('2d');
+          var data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          typedPixels(data, thresholdPct);
+          ctx.putImageData(data, 0, 0);
+          canvas.toBlob(function (blob) { resolve(blob || null); }, 'image/png');
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
+
+  /** tesseract.js words -> compact [text, left, top, width, height, confidence] lists (what the server reads). */
+  function compactWords(data) {
+    var out = [];
+    var ws = (data && data.words) || [];
+    for (var i = 0; i < ws.length; i++) {
+      var w = ws[i];
+      if (!w || !w.bbox || !String(w.text || '').trim()) continue;
+      out.push([String(w.text).trim(), Math.round(w.bbox.x0), Math.round(w.bbox.y0),
+        Math.round(w.bbox.x1 - w.bbox.x0), Math.round(w.bbox.y1 - w.bbox.y0), Math.round(w.confidence || 0)]);
+    }
+    return out;
+  }
+
+  // The marriage reader votes between these. How dark a pixel must be to count as "typed" depends on the
+  // photo (lighting, and how the browser's canvas smooths it when shrinking), so one low, one middle and one
+  // high threshold are used, in both OCR layouts (6 = one block, 11 = sparse words). Measured through this
+  // very code (canvas path) on 3 real photos: 84/102 fields right; the earlier 25/30/25 set only 45/102;
+  // the old plain-text reader ~2/102.
+  var TYPED_VARIANTS = [{ t: 20, psm: '11' }, { t: 30, psm: '6' }, { t: 40, psm: '11' }];
+  var TYPED_MAX_DIM = 2400;
+
+  async function recognizeTyped(slot, worker, file, deg) {
+    var variants = [];
+    var images = {};
+    slot.phase = 'typed';
+    for (var i = 0; i < TYPED_VARIANTS.length; i++) {
+      var v = TYPED_VARIANTS[i];
+      try {
+        if (!images[v.t]) images[v.t] = await typedImage(file, deg, TYPED_MAX_DIM, v.t);
+        if (!images[v.t]) continue;
+        try { await worker.setParameters({ tessedit_pageseg_mode: v.psm }); } catch (e) {}
+        var res = await worker.recognize(images[v.t]);
+        var words = compactWords(res && res.data);
+        if (words.length) variants.push(words);
+      } catch (e) { /* skip this variant, the others can still vote */ }
+    }
+    try { await worker.setParameters({ tessedit_pageseg_mode: '3' }); } catch (e) {}
+    return variants;
+  }
+
   // Measured end-to-end (OCR -> field extraction, 3 real certificates): plain 2400px = 9.2/15,
   // plain 1800px = 8.0/15, enhanced 2nd pass = 5.7-7.2/15. The enhanced text reads more words but
   // its line layout breaks the field extractor, so the 2nd pass is OFF. Code kept for later use.
@@ -231,9 +347,38 @@ window.CertOcrClient = (function () {
   }
 
   /** Plain pass first; only if it looks unreliable, an enhanced 2nd pass - keep whichever read more solid words. */
+  // A sideways / upside-down photo reads as nonsense (few confident words). When the first pass is that poor,
+  // try the other three directions on a small copy and keep the one that reads clearly (tested: sideways
+  // marriage certificate 5 confident words, turned the right way 165).
+  var ORIENT_MIN_SOLID = 40;
+  var ORIENT_PROBE_DIM = 1400;
+
+  async function findRotation(slot, worker, file, currentSolid) {
+    slot.phase = 'turning';
+    var bestDeg = 0, bestSolid = currentSolid;
+    var degs = [90, 270, 180];
+    for (var i = 0; i < degs.length; i++) {
+      try {
+        var probe = await downscale(file, ORIENT_PROBE_DIM, degs[i]);
+        var r = await ocrPass(worker, probe, '3');
+        if (r.solid > bestSolid) { bestSolid = r.solid; bestDeg = degs[i]; }
+      } catch (e) { /* ignore this direction */ }
+    }
+    return bestSolid >= ORIENT_MIN_SOLID && bestSolid >= currentSolid * 2 ? bestDeg : 0;
+  }
+
   async function recognizeOne(slot, worker, file) {
     slot.phase = 'reading';
+    var rotation = 0;
     var best = await ocrPass(worker, await downscale(file, PLAIN_MAX_DIM), '3');
+    if (best.solid < ORIENT_MIN_SOLID) {
+      rotation = await findRotation(slot, worker, file, best.solid);
+      if (rotation) {
+        slot.phase = 'reading';
+        best = await ocrPass(worker, await downscale(file, PLAIN_MAX_DIM, rotation), '3');
+      }
+    }
+    best.rotation = rotation;
     if (ENABLE_ENHANCED_PASS && best.confidence < ENHANCE_BELOW) {
       slot.phase = 'enhancing';
       try {
@@ -251,19 +396,20 @@ window.CertOcrClient = (function () {
 
   /**
    * Same as recognize(), but returns details so the caller can judge quality:
-   *   { text, confidence, solid, enhanced, usable }
+   *   { text, confidence, solid, enhanced, usable, rotation, typedVariants }
+   *   options.type === 'marriage' also fills typedVariants (word lists with positions).
    * usable === false means almost nothing readable came out (callers should
    * NOT trust `text` then - e.g. let the server's own OCR try instead).
    * Never throws.
    */
-  async function recognizeDetailed(files, onProgress) {
-    var empty = { text: '', confidence: 0, solid: 0, enhanced: false, usable: false };
+  async function recognizeDetailed(files, onProgress, options) {
+    var empty = { text: '', confidence: 0, solid: 0, enhanced: false, usable: false, rotation: 0, typedVariants: [] };
     var slot = await acquireSlot();
     if (!slot) return empty;
     var worker = await slot.promise;
     slot.onProgress = onProgress || null;
     var combined = '';
-    var out = { text: '', confidence: 0, solid: 0, enhanced: false, usable: false };
+    var out = { text: '', confidence: 0, solid: 0, enhanced: false, usable: false, rotation: 0, typedVariants: [] };
     try {
       for (var i = 0; i < files.length; i++) {
         if (!files[i]) continue;
@@ -273,10 +419,14 @@ window.CertOcrClient = (function () {
           combined += '\n' + r.text;
           out.solid += r.solid;
           out.enhanced = out.enhanced || r.enhanced;
-          if (i === 0) out.confidence = r.confidence;
+          if (i === 0) { out.confidence = r.confidence; out.rotation = r.rotation || 0; }
         } catch (e) {
           // Skip this photo's OCR, keep whatever was already recognized.
         }
+      }
+      // Marriage certificates: also read a "typed text only" copy, with word positions (see typedPixels).
+      if (options && options.type === 'marriage' && files[0]) {
+        out.typedVariants = await recognizeTyped(slot, worker, files[0], out.rotation);
       }
     } finally {
       slot.onProgress = null;
@@ -300,5 +450,5 @@ window.CertOcrClient = (function () {
     return r.text;
   }
 
-  return { recognize: recognize, recognizeDetailed: recognizeDetailed, POOL_SIZE: POOL_SIZE, _enhancePixels: enhancePixels };
+  return { recognize: recognize, recognizeDetailed: recognizeDetailed, POOL_SIZE: POOL_SIZE, _enhancePixels: enhancePixels, _typedPixels: typedPixels, _compactWords: compactWords };
 })();

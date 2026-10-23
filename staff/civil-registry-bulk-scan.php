@@ -410,6 +410,7 @@ require_once __DIR__ . '/includes/staff-header.php';
       if (nameWordCount(f.mother_name) < 2) missing.push('Mother');
       if (nameWordCount(f.father_name) < 2) missing.push('Father');
     }
+    if (type === 'marriage' && nameWordCount(f.spouse_name) < 2) missing.push('Wife');
     return missing.length ? '⚠ Check: ' + missing.join(', ') : '✓ Scanned';
   }
 
@@ -444,13 +445,15 @@ require_once __DIR__ . '/includes/staff-header.php';
     // anything usable (and does a 2nd, enhanced pass on hard photos).
     // Falls back to recognize() if an older cached copy of the JS is loaded.
     var ocrPromise = window.CertOcrClient.recognizeDetailed
-      ? window.CertOcrClient.recognizeDetailed([file], onOcrProgress)
+      ? window.CertOcrClient.recognizeDetailed([file], onOcrProgress, { type: currentType() })
       : window.CertOcrClient.recognize([file], onOcrProgress).then(function (t) { return { text: t, usable: !!t }; });
 
     function onOcrProgress(pct, phase) {
       var statusDiv = document.getElementById('bulkstatus-' + id);
       if (statusDiv) {
-        statusDiv.textContent = (phase === 'enhancing' ? 'Poor photo - enhancing... ' : 'Reading in the browser... ') + pct + '%';
+        var label = { enhancing: 'Poor photo - enhancing... ', turning: 'Checking the photo direction... ',
+                      typed: 'Reading the typed answers... ' }[phase] || 'Reading in the browser... ';
+        statusDiv.textContent = label + (phase === 'turning' ? '' : pct + '%');
       }
     }
 
@@ -468,6 +471,10 @@ require_once __DIR__ . '/includes/staff-header.php';
       // sending it would only stop the server's own OCR from trying.
       if (ocr && ocr.usable && ocr.text) {
         fd.append('ocr_text_client', ocr.text);
+      }
+      // Marriage: the typed-text-only readings WITH word positions (read by the two-column layout reader on the server)
+      if (ocr && ocr.typedVariants && ocr.typedVariants.length) {
+        fd.append('ocr_words', JSON.stringify(ocr.typedVariants));
       }
 
       return fetch('civil-registry-scan-inline.php', { method: 'POST', body: fd });
