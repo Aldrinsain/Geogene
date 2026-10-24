@@ -37,6 +37,8 @@
  */
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/includes/name-format.php';
+require_once __DIR__ . '/includes/date-parse.php';
+require_once __DIR__ . '/includes/bulk-save-helpers.php';
 require_once __DIR__ . '/../config/db.php';
 
 header('Content-Type: application/json');
@@ -61,6 +63,12 @@ $type = $payload['registry_type'] ?? 'birth';
 if (!in_array($type, ['birth', 'marriage', 'death'], true)) $type = 'birth';
 
 $staffId = $_SESSION['staff_id'] ?? null;
+
+// Is the Registry No. unique per registry type (optional migration) or across ALL types (the default)?
+$registryNoIsPerType = false;
+try {
+    $registryNoIsPerType = (int) $pdo->query("SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'civil_registry_records' AND INDEX_NAME = 'uq_registry_type_number'")->fetchColumn() > 0;
+} catch (Throwable $e) { /* keep the default */ }
 
 $stmtInsert = $pdo->prepare("
     INSERT INTO civil_registry_records (registry_type, registry_number, book_no, page_no,
@@ -92,16 +100,37 @@ foreach ($payload['records'] as $i => $rec) {
     $registryNumber = trim((string) ($rec['registry_number'] ?? ''));
     // Barangay in ANY case (DICKLUM / dicklum) -> exact spelling from the barangays table
     $barangay = gg_canonical_barangay($pdo, (string) ($rec['barangay'] ?? ''));
-    $dateOfEvent = trim((string) ($rec['date_of_event'] ?? ''));
-    $dateOfEvent = ($dateOfEvent !== '' && strtotime($dateOfEvent)) ? date('Y-m-d', strtotime($dateOfEvent)) : null;
+    // Dates are read strictly. A date that cannot be read is REPORTED for this row; it is never silently saved
+    // as "no date" (strtotime used to do that) or turned into a different date.
+    $dateOfEvent = null;
+    $dateError = null;
+    $rawEvent = trim((string) ($rec['date_of_event'] ?? ''));
+    if ($rawEvent !== '') {
+        $r = gg_parse_date_strict($rawEvent);
+        if ($r['ok']) $dateOfEvent = $r['ymd'];
+        else $dateError = 'Date of ' . ($type === 'marriage' ? 'marriage' : ($type === 'death' ? 'death' : 'birth')) . ' "' . $rawEvent . '" is not a valid date (' . $r['why'] . '). Use mm/dd/yyyy, for example 03/04/2021.';
+    }
     // Header fields of the certificate that the scan also reads (they used to be dropped on save)
     $pageNo     = trim((string) ($rec['page_no'] ?? '')) ?: null;
     $bookNo     = trim((string) ($rec['book_no'] ?? '')) ?: null;
     $cityMun    = trim((string) ($rec['city_municipality'] ?? '')) ?: null;
-    $datePrep   = trim((string) ($rec['date_prepared'] ?? ''));
-    $datePrep   = ($datePrep !== '' && strtotime($datePrep)) ? date('Y-m-d', strtotime($datePrep)) : null;
+    $datePrep   = null;
+    $rawPrep    = trim((string) ($rec['date_prepared'] ?? ''));
+    if ($rawPrep !== '') {
+        $r = gg_parse_date_strict($rawPrep);
+        if ($r['ok']) $datePrep = $r['ymd'];
+        elseif ($dateError === null) $dateError = 'Date prepared "' . $rawPrep . '" is not a valid date (' . $r['why'] . '). Use mm/dd/yyyy, or clear the box.';
+    }
+    if ($dateError !== null) {
+        $failed[] = ['row' => $i, 'reason' => $dateError];
+        continue;
+    }
 
-    [$firstName, $middleName, $lastName] = parseGivenMiddleSurname(trim((string) ($rec['person_name'] ?? '')));
+    // What the scan read (first/middle/last separately) - used for the names when nobody edited them in the table
+    $certData = json_decode((string) ($rec['certificate_data'] ?? ''), true);
+    if (!is_array($certData)) $certData = [];
+
+    [$firstName, $middleName, $lastName] = gg_bulk_person_parts($certData, gg_bulk_person_keys($type), (string) ($rec['person_name'] ?? ''));
 
     if ($firstName === '' || $lastName === '') {
         $failed[] = ['row' => $i, 'reason' => 'Name is missing or incomplete (needs at least a given name and a surname).'];
@@ -112,7 +141,7 @@ foreach ($payload['records'] as $i => $rec) {
         continue;
     }
     if (isset($seenInBatch[$registryNumber])) {
-        $failed[] = ['row' => $i, 'reason' => "Registry No. \"$registryNumber\" is duplicated within this same batch (row " . ($seenInBatch[$registryNumber] + 1) . ')."'];
+        $failed[] = ['row' => $i, 'reason' => "Registry No. \"$registryNumber\" is duplicated within this same batch (row " . ($seenInBatch[$registryNumber] + 1) . ').'];
         continue;
     }
 
@@ -135,7 +164,7 @@ foreach ($payload['records'] as $i => $rec) {
         $civilStatus = 'married';
         $wifeNameTyped = trim((string) ($rec['spouse_name'] ?? ''));
         if ($wifeNameTyped !== '') {
-            [$wifeFirst, $wifeMiddle, $wifeLast] = parseGivenMiddleSurname($wifeNameTyped);
+            [$wifeFirst, $wifeMiddle, $wifeLast] = gg_bulk_person_parts($certData, ['wife_first', 'wife_middle', 'wife_last'], $wifeNameTyped);
             $spouseName = formatFullName($wifeLast, $wifeFirst, $wifeMiddle);
         }
     } else { // death
@@ -169,8 +198,15 @@ foreach ($payload['records'] as $i => $rec) {
         error_log('civil-registry-bulk-save row ' . ($i + 1) . ': ' . $e->getMessage());
         $code = $e instanceof PDOException ? (int) ($e->errorInfo[1] ?? 0) : 0;
         if ($code === 1062) {
-            $dup = $pdo->prepare("SELECT record_id, registry_type, first_name, middle_name, last_name FROM civil_registry_records WHERE registry_number = ? LIMIT 1");
-            $dup->execute([$registryNumber]);
+            if ($registryNoIsPerType) {
+                // the optional migration registry_number_unique_per_type.sql was applied: a birth and a marriage may share a number
+                $dup = $pdo->prepare("SELECT record_id, registry_type, first_name, middle_name, last_name FROM civil_registry_records WHERE registry_type = ? AND registry_number = ? LIMIT 1");
+                $dup->execute([$type, $registryNumber]);
+            } else {
+                // default schema: Registry No. is unique across ALL types
+                $dup = $pdo->prepare("SELECT record_id, registry_type, first_name, middle_name, last_name FROM civil_registry_records WHERE registry_number = ? LIMIT 1");
+                $dup->execute([$registryNumber]);
+            }
             $d = $dup->fetch();
             $reason = 'Registry No. "' . $registryNumber . '" is already saved'
                     . ($d ? ' for ' . formatFullName($d['last_name'], $d['first_name'], $d['middle_name'])

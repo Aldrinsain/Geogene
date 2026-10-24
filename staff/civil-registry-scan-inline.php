@@ -102,6 +102,10 @@ if (empty($_FILES['certificate_image']) || $_FILES['certificate_image']['error']
 $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
 $uploadDir = __DIR__ . '/../uploads/civil-registry-scans/';
 if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+// The folder holds personal data: keep it closed to direct web access (photos are shown by civil-registry-image.php).
+if (!is_file($uploadDir . '.htaccess')) {
+    @file_put_contents($uploadDir . '.htaccess', "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Order allow,deny\n    Deny from all\n</IfModule>\n");
+}
 
 /** Validates + saves ONE uploaded photo; returns ['path'=>relative,'full'=>absolute] or null. */
 $saveOne = function (array $file, string $label) use ($allowed, $uploadDir): ?array {
@@ -178,6 +182,7 @@ $serverOcrAvailable = cert_ocr_available();
 // ---------------------------------------------------------------
 require_once __DIR__ . '/lib/YoloOcrClient.php';
 require_once __DIR__ . '/lib/MarriageTypedExtractor.php';
+require_once __DIR__ . '/includes/date-parse.php';
 $yoloFieldsRaw = yolo_scan_certificate($photo1['full'], $type);
 
 if ($yoloFieldsRaw !== null) {
@@ -297,13 +302,14 @@ if (!empty($common['barangay'])) $common['barangay'] = (string) gg_canonical_bar
 $normalizeDate = function (?string $v): ?string {
     $v = trim((string) $v);
     if ($v === '') return null;
-    $ts = strtotime($v);
-    // OCR often glues stray characters to a good date ("June 16, 2008 Bi,") - pull out the
-    // date-looking part ("Month D, YYYY" or "D Month YYYY") and try again.
-    if (!$ts && preg_match('/\b[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}\b/', $v, $m)) {
-        $ts = strtotime($m[0]);
+    $r = gg_parse_date_strict($v);
+    if ($r['ok']) return $r['ymd'];
+    // OCR often glues stray characters to a good date ("June 16, 2008 Bi,") - pull out the date-looking part and retry.
+    if (preg_match('/\b[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}\b|\b\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}\b/', $v, $m)) {
+        $r = gg_parse_date_strict($m[0]);
+        if ($r['ok']) return $r['ymd'];
     }
-    return $ts ? date('Y-m-d', $ts) : null;
+    return null;
 };
 if (!empty($legacy['date_of_event'])) {
     $n = $normalizeDate($legacy['date_of_event']);

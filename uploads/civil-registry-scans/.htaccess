@@ -1,0 +1,9 @@
+# Certificate scan photos contain personal data: never serve them straight from the web.
+# They are shown through staff/civil-registry-image.php, which checks that someone is logged in first.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

@@ -200,7 +200,7 @@ require_once __DIR__ . '/includes/staff-header.php';
           image_path: r.image_path,
           certificate_data: r.certificate_data || '',
           status: '✓ scanned (restored)',
-          previewUrl: '../' + r.image_path, // already uploaded before the refresh - use the real server path
+          previewUrl: 'civil-registry-image.php?f=' + encodeURIComponent(String(r.image_path).split('/').pop()), // already uploaded before the refresh - served by the login-checked image endpoint
         });
       });
       reviewPanel.style.display = '';

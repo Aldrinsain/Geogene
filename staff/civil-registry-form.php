@@ -29,6 +29,7 @@
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/includes/name-format.php';
+require_once __DIR__ . '/includes/scan-url.php';
 
 /**
  * Date helpers for the Date Prepared / Date of Birth / Marriage / Death fields.
@@ -313,7 +314,7 @@ require_once __DIR__ . '/includes/staff-header.php';
           <input type="file" id="scanFile-front-2" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:8px;">
           <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;">1st photo required, 2nd optional (clearer retake)</div>
           <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('front', this)">📷 SCAN FRONT</button>
-          <div id="scanPreview-front" style="margin-top:8px;"><?php if ($scanFrontExisting): ?><img src="../<?= htmlspecialchars($scanFrontExisting) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
+          <div id="scanPreview-front" style="margin-top:8px;"><?php if ($scanFrontExisting): ?><img src="<?= htmlspecialchars(gg_scan_url($scanFrontExisting)) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
           <div id="scanStatus-front" style="font-size:11.5px;margin-top:6px;min-height:14px;"></div>
           <details id="scanRawWrap-front" style="display:none;margin-top:6px;">
             <summary style="font-size:11px;cursor:pointer;color:var(--text-muted);">🔍 View the raw OCR text</summary>
@@ -326,7 +327,7 @@ require_once __DIR__ . '/includes/staff-header.php';
           <input type="file" id="scanFile-back-2" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:8px;">
           <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;">1st photo required, 2nd optional (clearer retake)</div>
           <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('back', this)">📷 SCAN BACK</button>
-          <div id="scanPreview-back" style="margin-top:8px;"><?php if ($scanBackExisting): ?><img src="../<?= htmlspecialchars($scanBackExisting) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
+          <div id="scanPreview-back" style="margin-top:8px;"><?php if ($scanBackExisting): ?><img src="<?= htmlspecialchars(gg_scan_url($scanBackExisting)) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
           <div id="scanStatus-back" style="font-size:11.5px;margin-top:6px;min-height:14px;"></div>
           <details id="scanRawWrap-back" style="display:none;margin-top:6px;">
             <summary style="font-size:11px;cursor:pointer;color:var(--text-muted);">🔍 View the raw OCR text</summary>
@@ -712,7 +713,7 @@ function dateMaskIconSvg(): string
         document.getElementById('hidden-scan_image_path_back_2').value = data.image_path_2 || '';
       }
       if (data.image_path && previewEl) {
-        previewEl.innerHTML = '<img src="../' + data.image_path + '" style="max-width:100%;border:1px solid var(--border);border-radius:6px;">';
+        previewEl.innerHTML = '<img src="civil-registry-image.php?f=' + encodeURIComponent(String(data.image_path).split('/').pop()) + '" style="max-width:100%;border:1px solid var(--border);border-radius:6px;">';
       }
 
       var rawWrap = document.getElementById('scanRawWrap-' + side);
