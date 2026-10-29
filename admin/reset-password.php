@@ -28,7 +28,7 @@ if (isset($_GET['resend'])) {
     $emailSent = send_password_reset_email($email, $name, $otp);
 
     if (!$emailSent) {
-        $_SESSION['admin_reset_otp_preview'] = $otp;
+        if (GEOGENE_SHOW_DEV_OTP) $_SESSION['admin_reset_otp_preview'] = $otp;
         $error = 'A new code has been sent. (Dev mode: shown below.)';
     } else {
         unset($_SESSION['admin_reset_otp_preview']);

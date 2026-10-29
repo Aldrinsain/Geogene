@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['pending_user_id'] = $userId;
                 $_SESSION['pending_email'] = $email;
                 if (!$emailSent) {
-                    $_SESSION['dev_otp_preview'] = $otp;
+                    if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
                 }
 
                 header('Location: verify-email.php');

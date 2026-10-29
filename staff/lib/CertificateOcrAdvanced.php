@@ -39,6 +39,27 @@
  *     cropping individual boxes.
  */
 
+// ---- Hostinger / shared hosting safety: exec-family functions are often disabled. ----
+// gg_shell_exec() never throws or fatals; it simply returns null when shell access is
+// unavailable, so OCR falls back to the browser OCR instead of crashing the page.
+if (!function_exists('gg_shell_exec')) {
+    function gg_shell_exec(string $cmd): ?string
+    {
+        static $ok = null;
+        if ($ok === null) {
+            $disabled = array_map('trim', explode(',', strtolower((string) ini_get('disable_functions'))));
+            $ok = function_exists('shell_exec') && !in_array('shell_exec', $disabled, true);
+        }
+        if (!$ok) return null;
+        try {
+            $r = @shell_exec($cmd);
+            return is_string($r) ? $r : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+}
+
 if (!function_exists('cert_adv_load_image')) {
     function cert_adv_load_image(string $path)
     {
@@ -239,7 +260,7 @@ if (!function_exists('cert_adv_get_word_confidences')) {
         $outBase = sys_get_temp_dir() . '/geogene_ocradv_' . uniqid();
         $safeImg = escapeshellarg($imagePath);
         $safeOut = escapeshellarg($outBase);
-        @shell_exec("tesseract $safeImg $safeOut --psm $psm tsv 2>&1");
+        gg_shell_exec("tesseract $safeImg $safeOut --psm $psm tsv 2>&1");
 
         $tsvFile = $outBase . '.tsv';
         $words = [];

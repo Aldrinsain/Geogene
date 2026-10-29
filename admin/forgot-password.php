@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['admin_reset_email'] = $email;
 
             if (!$emailSent) {
-                $_SESSION['admin_reset_otp_preview'] = $otp;
+                if (GEOGENE_SHOW_DEV_OTP) $_SESSION['admin_reset_otp_preview'] = $otp;
             } else {
                 unset($_SESSION['admin_reset_otp_preview']);
             }

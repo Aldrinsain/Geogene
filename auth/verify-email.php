@@ -27,7 +27,7 @@ if (isset($_GET['resend'])) {
     $emailSent = send_otp_email($email, $name, $otp);
 
     if (!$emailSent) {
-        $_SESSION['dev_otp_preview'] = $otp;
+        if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
         $error = 'A new code has been sent. (Dev mode: shown below because SMTP is not set up yet.)';
     } else {
         unset($_SESSION['dev_otp_preview']);

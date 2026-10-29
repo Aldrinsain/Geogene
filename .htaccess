@@ -1,0 +1,30 @@
+# GeoGene - Hostinger (LiteSpeed/Apache) settings
+Options -Indexes
+DirectoryIndex index.php
+
+# Force HTTPS (Hostinger gives a free SSL certificate). Remove this block only
+# if the site is not yet covered by SSL.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Never serve SQL dumps, scripts, logs, backups or secrets over the web
+<FilesMatch "(?i)(\.(sql|bak|log|ini|bat|py|pt|md|code-workspace|sample\.php)$|^secrets\.php$|^\.env.*|^\.git.*)">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Basic security headers
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

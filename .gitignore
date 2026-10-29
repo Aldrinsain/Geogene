@@ -1,9 +1,26 @@
-# Private keys / passwords - NEVER commit
+# ---- Private settings / API keys (loaded by config/env.php) ----
 config/secrets.php
 .env
 .env.*
+!.env.example
 
-# Python / editor junk
+# ---- Personal data: never push to GitHub ----
+/uploads/*
+!/uploads/.htaccess
+!/uploads/civil-registry-scans/
+/uploads/civil-registry-scans/*
+!/uploads/civil-registry-scans/.htaccess
+assets/profiles/*
+*.sql
+!migrations/*.sql
+!config/schema.sql
+
+# ---- Large / local-only ----
+geogene-yolo/models/*.pt
+geogene-yolo/dataset/
+*.code-workspace
+.vscode/
+node_modules/
 __pycache__/
 *.pyc
 .DS_Store

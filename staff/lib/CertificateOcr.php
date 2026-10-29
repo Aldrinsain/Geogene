@@ -35,13 +35,34 @@
  * office double-checks data entry.
  */
 
+// ---- Hostinger / shared hosting safety: exec-family functions are often disabled. ----
+// gg_shell_exec() never throws or fatals; it simply returns null when shell access is
+// unavailable, so OCR falls back to the browser OCR instead of crashing the page.
+if (!function_exists('gg_shell_exec')) {
+    function gg_shell_exec(string $cmd): ?string
+    {
+        static $ok = null;
+        if ($ok === null) {
+            $disabled = array_map('trim', explode(',', strtolower((string) ini_get('disable_functions'))));
+            $ok = function_exists('shell_exec') && !in_array('shell_exec', $disabled, true);
+        }
+        if (!$ok) return null;
+        try {
+            $r = @shell_exec($cmd);
+            return is_string($r) ? $r : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+}
+
 if (!function_exists('cert_ocr_available')) {
     function cert_ocr_available(): bool
     {
         if (stripos(PHP_OS, 'WIN') === 0) {
-            $out = @shell_exec('where tesseract 2>NUL');
+            $out = gg_shell_exec('where tesseract 2>NUL');
         } else {
-            $out = @shell_exec('command -v tesseract 2>/dev/null');
+            $out = gg_shell_exec('command -v tesseract 2>/dev/null');
         }
         return !empty(trim((string) $out));
     }
@@ -77,7 +98,7 @@ if (!function_exists('cert_auto_rotate_image')) {
 
         if (!extension_loaded('gd')) return $imagePath;
 
-        $osd = @shell_exec('tesseract ' . escapeshellarg($imagePath) . ' - --psm 0 2>&1');
+        $osd = gg_shell_exec('tesseract ' . escapeshellarg($imagePath) . ' - --psm 0 2>&1');
         if (!$osd || !preg_match('/Rotate:\s*(\d+)/i', $osd, $m)) return $imagePath;
 
         $angle = ((int) $m[1]) % 360;
@@ -132,7 +153,7 @@ if (!function_exists('cert_imagemagick_available')) {
         $isWin = stripos(PHP_OS, 'WIN') === 0;
         $candidates = ['magick', 'convert'];
         foreach ($candidates as $bin) {
-            $out = $isWin ? @shell_exec("where $bin 2>NUL") : @shell_exec("command -v $bin 2>/dev/null");
+            $out = $isWin ? gg_shell_exec("where $bin 2>NUL") : gg_shell_exec("command -v $bin 2>/dev/null");
             if (!empty(trim((string) $out))) { $binary = $bin; break; }
         }
         return $binary;
@@ -180,7 +201,7 @@ if (!function_exists('cert_preprocess_for_ocr')) {
             // get noticeably SLOWER the more pixels they're given - this
             // was a real, measurable chunk of why scanning felt slow on a
             // big batch, especially in Bulk Scan.
-            @shell_exec("$bin $safeIn -auto-orient -resize '2400x2400>' -colorspace Gray -contrast-stretch 1%x1% -unsharp 0x2+1.5+0 $safeOut 2>&1");
+            gg_shell_exec("$bin $safeIn -auto-orient -resize '2400x2400>' -colorspace Gray -contrast-stretch 1%x1% -unsharp 0x2+1.5+0 $safeOut 2>&1");
             if (is_file($tmp) && filesize($tmp) > 0) return $tmp;
             @unlink($tmp);
             // Fall through to the GD path below if ImageMagick failed for
@@ -268,7 +289,7 @@ if (!function_exists('cert_run_ocr')) {
 
         // 1. PASSPORT TEST
         $testOut = sys_get_temp_dir() . '/geogene_test_' . uniqid();
-        @shell_exec("tesseract $safePrepped " . escapeshellarg($testOut) . " --psm 6 2>&1");
+        gg_shell_exec("tesseract $safePrepped " . escapeshellarg($testOut) . " --psm 6 2>&1");
         $testTxt = is_file($testOut . '.txt') ? file_get_contents($testOut . '.txt') : '';
         @unlink($testOut . '.txt');
 
@@ -283,20 +304,20 @@ if (!function_exists('cert_run_ocr')) {
             if (stripos($testTxt, 'ILOILO') !== false || stripos($testTxt, 'SANICO') !== false || stripos($testTxt, 'LENY') !== false) {
                 // LAYOUT: ILOILO (Yellow Paper) - Kini ang kadtong imong gi-scan karon.
                 // 92% width ug 80% height para makuha ang tunga nga bahin.
-                @shell_exec("magick $safePrepped -gravity North -crop 92%x80%+0+0 +repage $safeCrop 2>&1");
+                gg_shell_exec("magick $safePrepped -gravity North -crop 92%x80%+0+0 +repage $safeCrop 2>&1");
             } elseif (stripos($testTxt, 'PHILLIPS') !== false || stripos($testTxt, '1993') !== false) {
                 // LAYOUT: KARAANG PAPEL
-                @shell_exec("magick $safePrepped -gravity North -crop 95%x85%+0+0 +repage $safeCrop 2>&1");
+                gg_shell_exec("magick $safePrepped -gravity North -crop 95%x85%+0+0 +repage $safeCrop 2>&1");
             } else {
                 // DEFAULT: Standard PSA
-                @shell_exec("magick $safePrepped -gravity North -crop 94%x80%+0+0 +repage $safeCrop 2>&1");
+                gg_shell_exec("magick $safePrepped -gravity North -crop 94%x80%+0+0 +repage $safeCrop 2>&1");
             }
 
             if (is_file($cropTemp) && filesize($cropTemp) > 0) $finalImg = $cropTemp;
         }
 
         $safeFinal = escapeshellarg($finalImg);
-        @shell_exec("tesseract $safeFinal $safeOut --psm 6 -c preserve_interword_spaces=1 2>&1");
+        gg_shell_exec("tesseract $safeFinal $safeOut --psm 6 -c preserve_interword_spaces=1 2>&1");
 
         if ($isPreppedTemp) @unlink($preppedImg);
         if ($cropTemp) @unlink($cropTemp);

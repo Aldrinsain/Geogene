@@ -13,12 +13,14 @@
 
 define('SMTP_HOST', 'smtp-relay.brevo.com');
 // SMTP_USER ug SMTP_PASS naa na sa config/secrets.php (dili i-commit sa Git).
-if (is_file(__DIR__ . '/secrets.php')) require_once __DIR__ . '/secrets.php';
+require_once __DIR__ . '/env.php';
 if (!defined('SMTP_USER')) define('SMTP_USER', '');
 if (!defined('SMTP_PASS')) define('SMTP_PASS', '');   // walay secrets.php -> DEV MODE (OTP ipakita sa screen)
 define('SMTP_PORT', 587);
+// On the LIVE site (GEOGENE_PRODUCTION = true in secrets.php) never show OTP codes on screen.
+if (!defined('GEOGENE_SHOW_DEV_OTP')) define('GEOGENE_SHOW_DEV_OTP', !(defined('GEOGENE_PRODUCTION') && GEOGENE_PRODUCTION));
 define('SMTP_FROM_NAME', 'GeoGene');
-define('SMTP_FROM_EMAIL', 'aldrinpilotonsain2003@gmail.com'); // verified sender sa Brevo
+if (!defined('SMTP_FROM_EMAIL')) define('SMTP_FROM_EMAIL', 'aldrinpilotonsain2003@gmail.com'); // verified sender sa Brevo
 
 $PHPMAILER_PATH = __DIR__ . '/../lib/PHPMailer/PHPMailer.php';
 define('PHPMAILER_AVAILABLE', file_exists($PHPMAILER_PATH));

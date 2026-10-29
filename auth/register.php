@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$emailSent) {
                 // DEV MODE fallback: PHPMailer wala pa na-setup, ipakita ang OTP
                 // diretso sa verify-email.php screen para makapadayon og testing.
-                $_SESSION['dev_otp_preview'] = $otp;
+                if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
             }
 
             header('Location: verify-email.php');

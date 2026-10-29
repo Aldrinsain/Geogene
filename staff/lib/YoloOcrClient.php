@@ -15,6 +15,7 @@
  * and never invents a field value.
  */
 
+if (is_file(__DIR__ . '/../../config/env.php')) require_once __DIR__ . '/../../config/env.php';
 if (!defined('YOLO_SERVICE_URL')) {
     // Change this if the Python service is started on a different port
     // (see geogene-yolo/service/app.py's PORT constant).
