@@ -12,9 +12,6 @@ $brgyFilter  = trim($_GET['barangay'] ?? '');
 $yearFilter  = $_GET['year'] ?? '';
 $statusFilter= $_GET['status'] ?? '';
 $sexFilter   = $_GET['sex'] ?? '';
-$dpFilter    = $_GET['dp'] ?? '';
-$dpFrom      = $_GET['dp_from'] ?? '';
-$dpTo        = $_GET['dp_to'] ?? '';
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 10;
 $offset = ($page - 1) * $perPage;
@@ -23,12 +20,9 @@ $offset = ($page - 1) * $perPage;
 if (!in_array($typeFilter, ['birth', 'marriage', 'death'], true)) $typeFilter = '';
 if (!in_array($statusFilter, ['verified', 'pending'], true)) $statusFilter = '';
 if (!in_array($sexFilter, ['male', 'female'], true)) $sexFilter = '';
-if (!in_array($searchBy, ['all', 'name', 'registry', 'page', 'barangay'], true)) $searchBy = 'all';
-if (!in_array($dpFilter, ['today', 'week', 'month', 'year', 'custom'], true)) $dpFilter = '';
+if (!in_array($searchBy, ['all', 'name', 'registry', 'barangay'], true)) $searchBy = 'all';
 if ($yearFilter !== 'older' && !preg_match('/^\d{4}$/', (string) $yearFilter)) $yearFilter = '';
 $validDate = fn($d) => (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $d) && strtotime($d) !== false;
-if (!$validDate($dpFrom)) $dpFrom = '';
-if (!$validDate($dpTo)) $dpTo = '';
 
 $where = [];
 $params = [];
@@ -45,17 +39,13 @@ if ($search !== '') {
             $where[] = "registry_number LIKE ?";
             $params[] = $like;
             break;
-        case 'page':
-            $where[] = "page_no LIKE ?";
-            $params[] = $like;
-            break;
         case 'barangay':
             $where[] = "barangay LIKE ?";
             $params[] = $like;
             break;
         default: // all
-            $where[] = "($nameSql OR registry_number LIKE ? OR page_no LIKE ? OR barangay LIKE ?)";
-            array_push($params, $like, $like, $like, $like, $like, $like, $like);
+            $where[] = "($nameSql OR registry_number LIKE ? OR barangay LIKE ?)";
+            array_push($params, $like, $like, $like, $like, $like, $like);
     }
 }
 if ($typeFilter !== '') { $where[] = "registry_type = ?"; $params[] = $typeFilter; }
@@ -72,32 +62,11 @@ if ($yearFilter === 'older') {
     $params[] = (int) $yearFilter;
 }
 
-// Date Prepared (same fallback sa gipakita sa table: date_prepared, else created_at)
-$dpExpr = "COALESCE(date_prepared, DATE(created_at))";
-$today = date('Y-m-d');
-if ($dpFilter === 'today') {
-    $where[] = "$dpExpr = ?"; $params[] = $today;
-} elseif ($dpFilter === 'week') {
-    $where[] = "$dpExpr BETWEEN ? AND ?";
-    $params[] = date('Y-m-d', strtotime('monday this week'));
-    $params[] = date('Y-m-d', strtotime('sunday this week'));
-} elseif ($dpFilter === 'month') {
-    $where[] = "$dpExpr BETWEEN ? AND ?";
-    $params[] = date('Y-m-01');
-    $params[] = date('Y-m-t');
-} elseif ($dpFilter === 'year') {
-    $where[] = "$dpExpr BETWEEN ? AND ?";
-    $params[] = date('Y-01-01');
-    $params[] = date('Y-12-31');
-} elseif ($dpFilter === 'custom') {
-    if ($dpFrom !== '') { $where[] = "$dpExpr >= ?"; $params[] = $dpFrom; }
-    if ($dpTo !== '')   { $where[] = "$dpExpr <= ?"; $params[] = $dpTo; }
-}
 $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 // Active filters (gawas sa search) - para sa badge sa Filter button
 $activeFilterCount = count(array_filter([
-    $typeFilter, $brgyFilter, $yearFilter, $statusFilter, $sexFilter, $dpFilter,
+    $typeFilter, $brgyFilter, $yearFilter, $statusFilter, $sexFilter,
 ]));
 $hasAnyFilter = $activeFilterCount > 0 || $search !== '';
 
@@ -105,8 +74,7 @@ $hasAnyFilter = $activeFilterCount > 0 || $search !== '';
 $filterQS = array_filter([
     'q' => $search, 'qby' => $searchBy !== 'all' ? $searchBy : '', 'type' => $typeFilter,
     'barangay' => $brgyFilter, 'year' => $yearFilter, 'status' => $statusFilter,
-    'sex' => $sexFilter, 'dp' => $dpFilter,
-    'dp_from' => $dpFilter === 'custom' ? $dpFrom : '', 'dp_to' => $dpFilter === 'custom' ? $dpTo : '',
+    'sex' => $sexFilter,
 ], fn($v) => $v !== '' && $v !== null);
 
 // ---------- EXPORT (CSV sa current filtered results) ----------
@@ -117,12 +85,10 @@ if (isset($_GET['export'])) {
     header('Content-Disposition: attachment; filename="civil-registry-' . date('Ymd-His') . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM para sakto ang Excel
-    fputcsv($out, ['Page No.', 'Registry No.', 'Barangay', 'Date Prepared', 'Full Name', 'Type', 'Date of Event', 'Status']);
+    fputcsv($out, ['Registry No.', 'Barangay', 'Full Name', 'Type', 'Date of Event', 'Status']);
     while ($r = $exStmt->fetch()) {
-        $dp = $r['date_prepared'] ?: $r['created_at'];
         fputcsv($out, [
-            $r['page_no'], $r['registry_number'], $r['barangay'],
-            $dp ? date('Y-m-d', strtotime($dp)) : '',
+            $r['registry_number'], $r['barangay'],
             formatFullName($r['last_name'], $r['first_name'], $r['middle_name'], $r['suffix']) ?: $r['full_name'],
             ucfirst($r['registry_type']), $r['date_of_event'],
             !empty($r['verified_at']) ? 'Verified' : 'Pending',
@@ -228,7 +194,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <form method="GET" class="table-toolbar filter-wrap" id="filterForm">
     <div class="search-box">
       <span><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16" style="display:inline-block;vertical-align:middle;"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg></span>
-      <input type="text" name="q" id="filterSearch" placeholder="Search full name, registry number, page number, or barangay..." value="<?= htmlspecialchars($search) ?>" autocomplete="off">
+      <input type="text" name="q" id="filterSearch" placeholder="Search full name, registry number, or barangay..." value="<?= htmlspecialchars($search) ?>" autocomplete="off">
     </div>
     <button type="button" class="btn btn-outline btn-sm filter-toggle<?= $activeFilterCount ? ' has-active' : '' ?>" id="filterToggle" aria-expanded="false" aria-controls="filterPanel">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" style="vertical-align:-2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4.5h18l-7 8.25V19.5l-4 1.5v-8.25L3 4.5Z"/></svg>
@@ -270,20 +236,6 @@ require_once __DIR__ . '/includes/staff-header.php';
             <option value="older" <?= $yearFilter === 'older' ? 'selected' : '' ?>>Older Records</option>
           </select>
         </label>
-        <label>Date Prepared
-          <select name="dp" id="dpSelect">
-            <option value="">All Dates</option>
-            <option value="today" <?= $dpFilter === 'today' ? 'selected' : '' ?>>Today</option>
-            <option value="week" <?= $dpFilter === 'week' ? 'selected' : '' ?>>This Week</option>
-            <option value="month" <?= $dpFilter === 'month' ? 'selected' : '' ?>>This Month</option>
-            <option value="year" <?= $dpFilter === 'year' ? 'selected' : '' ?>>This Year</option>
-            <option value="custom" <?= $dpFilter === 'custom' ? 'selected' : '' ?>>Custom Date Range</option>
-          </select>
-        </label>
-        <div class="filter-custom" id="dpCustom" style="<?= $dpFilter === 'custom' ? '' : 'display:none;' ?>">
-          <label>From <input type="date" name="dp_from" value="<?= htmlspecialchars($dpFrom) ?>"></label>
-          <label>To <input type="date" name="dp_to" value="<?= htmlspecialchars($dpTo) ?>"></label>
-        </div>
         <label>Status
           <select name="status">
             <option value="">All Status</option>
@@ -303,7 +255,6 @@ require_once __DIR__ . '/includes/staff-header.php';
             <option value="all" <?= $searchBy === 'all' ? 'selected' : '' ?>>All fields</option>
             <option value="name" <?= $searchBy === 'name' ? 'selected' : '' ?>>Full Name</option>
             <option value="registry" <?= $searchBy === 'registry' ? 'selected' : '' ?>>Registry Number</option>
-            <option value="page" <?= $searchBy === 'page' ? 'selected' : '' ?>>Page Number</option>
             <option value="barangay" <?= $searchBy === 'barangay' ? 'selected' : '' ?>>Barangay</option>
           </select>
         </label>
@@ -319,10 +270,8 @@ require_once __DIR__ . '/includes/staff-header.php';
   <table class="data-table">
     <thead>
       <tr>
-        <th style="width:60px;">Page No.</th>
         <th>Registry No.</th>
         <th>Barangay</th>
-        <th>Date Prepared</th>
         <?php if ($typeFilter === 'birth'): ?>
           <th>Date of Birth</th>
           <th>Name of Child</th>
@@ -357,18 +306,16 @@ require_once __DIR__ . '/includes/staff-header.php';
     </thead>
     <tbody>
       <?php
-      $colCount = 4 + ($typeFilter === 'birth' ? 4 : ($typeFilter === 'marriage' ? 7 : ($typeFilter === 'death' ? 10 : 3))) + 1;
+      $colCount = 2 + ($typeFilter === 'birth' ? 4 : ($typeFilter === 'marriage' ? 7 : ($typeFilter === 'death' ? 10 : 3))) + 1;
       if (!$records):
       ?>
         <tr><td colspan="<?= $colCount ?>" style="text-align:center;color:var(--text-muted);padding:30px;">No records found.</td></tr>
       <?php else: foreach ($records as $i => $r):
-        $pageNo = $offset + $i + 1;
         // Always recompute the display name fresh from first/middle/last
         // (not the stored full_name column) - so older records saved before
         // the Suffix-in-name fix still display correctly without needing a
         // one-time data cleanup.
         $fullName = formatFullName($r['last_name'], $r['first_name'], $r['middle_name'], $r['suffix']) ?: $r['full_name'];
-        $datePrepared = $r['date_prepared'] ?: $r['created_at'];
 
         // Marriage: use "sex" to figure out kinsa ang Wife/Husband sa this record's
         // primary registrant vs the spouse_name field.
@@ -381,10 +328,8 @@ require_once __DIR__ . '/includes/staff-header.php';
         }
       ?>
         <tr>
-          <td><?= htmlspecialchars($r['page_no'] ?: (string) $pageNo) ?></td>
           <td><?= htmlspecialchars($r['registry_number'] ?: '—') ?></td>
           <td><?= htmlspecialchars($r['barangay'] ?: '—') ?><?= !empty($r['zone']) ? '<div style="font-size:11px;color:var(--text-muted);">' . htmlspecialchars($r['zone']) . '</div>' : '' ?></td>
-          <td><?= $datePrepared ? date('M d, Y', strtotime($datePrepared)) : '—' ?></td>
 
           <?php if ($typeFilter === 'birth'): ?>
             <td><?= $r['date_of_event'] ? date('M d, Y', strtotime($r['date_of_event'])) : '—' ?></td>
@@ -514,8 +459,6 @@ require_once __DIR__ . '/includes/staff-header.php';
   var toggle = document.getElementById('filterToggle');
   var panel  = document.getElementById('filterPanel');
   var close  = document.getElementById('filterClose');
-  var dp     = document.getElementById('dpSelect');
-  var custom = document.getElementById('dpCustom');
   var box    = document.querySelector('.panel');
   if (!toggle || !panel) return;
 
@@ -530,9 +473,6 @@ require_once __DIR__ . '/includes/staff-header.php';
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
   document.addEventListener('click', function (e) {
     if (!panel.hidden && !panel.contains(e.target) && !toggle.contains(e.target)) setOpen(false);
-  });
-  if (dp) dp.addEventListener('change', function () {
-    custom.style.display = dp.value === 'custom' ? '' : 'none';
   });
 })();
 </script>

@@ -282,5 +282,6 @@ document.getElementById('sidebarToggle')?.addEventListener('click', () => {
   });
 })();
 </script>
+<script src="assets/js/sidebar-tooltip.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/sidebar-tooltip.js') ?>"></script>
 </body>
 </html>

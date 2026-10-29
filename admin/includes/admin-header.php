@@ -91,7 +91,10 @@ function adminTimeAgo($datetime) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoGene Admin - <?= htmlspecialchars($pageTitle) ?></title>
-<link rel="stylesheet" href="../staff/assets/css/staff.css">
+<link rel="stylesheet" href="../staff/assets/css/staff.css?v=<?= (int) @filemtime(__DIR__ . '/../../staff/assets/css/staff.css') ?>">
+<link rel="stylesheet" href="../staff/assets/css/global-search.css?v=<?= (int) @filemtime(__DIR__ . '/../../staff/assets/css/global-search.css') ?>">
+<?php require_once __DIR__ . '/../../staff/includes/global-search-config.php'; echo gg_search_script('admin'); ?>
+<script src="../staff/assets/js/global-search.js?v=<?= (int) @filemtime(__DIR__ . '/../../staff/assets/js/global-search.js') ?>" defer></script>
 <style>
   @media print {
     .sidebar, .topbar { display: none !important; }
@@ -132,7 +135,8 @@ function adminTimeAgo($datetime) {
      style="width:80px;height:80px;object-fit:contain;display:block;transform:translateX(-15px);">
       <div class="logo-text">GeoGene<br><span style="font-weight:400;font-size:10px;opacity:.7;">Admin Portal</span></div>
       <button type="button" class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse sidebar" aria-label="Collapse sidebar">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <svg class="ico-collapse" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m10 15-3-3 3-3"/></svg>
+        <svg class="ico-expand" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>
       </button>
     </div>
 
@@ -203,7 +207,7 @@ function adminTimeAgo($datetime) {
       <button class="icon-btn" style="display:none;" id="sidebarToggle"></button>
       <div class="topbar-search">
         <span><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16" style="display:inline-block;vertical-align:middle;"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg></span>
-        <input type="text" placeholder="Search...">
+        <input type="text" id="ggSearchInput" placeholder="Search..." aria-label="Search the system">
       </div>
       <div class="topbar-right">
         <div class="topbar-badge">Admin</div>

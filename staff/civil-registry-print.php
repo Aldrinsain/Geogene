@@ -87,10 +87,10 @@ require_once __DIR__ . '/includes/staff-header.php';
 <div class="cert-doc-wrap">
 
 <?php
-// ---------- footer helper (print-only: date prepared + record id stamp) ----------
+// ---------- footer helper (print-only: record id stamp) ----------
 function certFooter($d, $recordId) {
     echo '<div style="margin-top:16px;font-size:9.5px;color:#777;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:6px;">';
-    echo '<span>Date Prepared: ' . (v($d, 'date_prepared') ?: '&mdash;') . '</span>';
+    echo '<span></span>';
     echo '<span>Record ID: MCRO-' . str_pad((string) $recordId, 6, '0', STR_PAD_LEFT) . '</span></div>';
 }
 ?>

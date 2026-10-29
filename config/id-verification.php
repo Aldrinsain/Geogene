@@ -1,9 +1,9 @@
 <?php
 // GeoGene - ID Verification settings
 // Usba ra diri kung kinahanglan. Wala nay laing file nga kinahanglan i-edit.
+require_once __DIR__ . '/env.php';     // ID_VERIFY_PEPPER pwede ibutang sa .env
 
 // TRUE = ipakita ang OCR text sa result screen (para lang sa testing, ayaw i-on sa production)
-require_once __DIR__ . '/env.php';   // lets ID_VERIFY_PEPPER come from secrets.php / .env
 if (!defined('ID_VERIFY_DEBUG'))        define('ID_VERIFY_DEBUG', false);
 
 // Secret nga gigamit sa pag-hash sa ID number (dili gitipigan ang tinood nga ID number).

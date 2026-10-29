@@ -1,30 +1,34 @@
-# GeoGene - Hostinger (LiteSpeed/Apache) settings
+# ======================================================================
+# GeoGene - production settings (Hostinger / LiteSpeed / Apache)
+# Ibutang kini sa ROOT sa website (tupad sa index.php).
+# ======================================================================
+
+# 1) Walay folder listing (dili makita ang sulod sa mga folder)
 Options -Indexes
-DirectoryIndex index.php
 
-# Force HTTPS (Hostinger gives a free SSL certificate). Remove this block only
-# if the site is not yet covered by SSL.
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteCond %{HTTPS} !=on
-  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
-  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-</IfModule>
-
-# Never serve SQL dumps, scripts, logs, backups or secrets over the web
-<FilesMatch "(?i)(\.(sql|bak|log|ini|bat|py|pt|md|code-workspace|sample\.php)$|^secrets\.php$|^\.env.*|^\.git.*)">
-  <IfModule mod_authz_core.c>
-    Require all denied
-  </IfModule>
-  <IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
-  </IfModule>
+# 2) Ayaw tugoti ang direct web access sa private nga files
+<FilesMatch "^\.(ht|env)">
+  Require all denied
+</FilesMatch>
+<FilesMatch "(?i)\.(sql|log|bak|sh|md|py|pt|env)$">
+  Require all denied
 </FilesMatch>
 
-# Basic security headers
+# 3) Ayaw tugoti ang direct web access sa private nga folders
+#    (.git, migrations, geogene-yolo, config) - kini gamiton ra sa PHP sa sulod
+<IfModule mod_alias.c>
+  RedirectMatch 403 (?i)/(\.git|migrations|geogene-yolo|config)(/|$)
+</IfModule>
+
+# 4) Dugang nga panalipod sa browser
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "SAMEORIGIN"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
+
+# 5) Pugsa ang HTTPS - I-UNCOMMENT (tangtanga ang #) KINI NGA 3 KA LINYA
+#    KUNG NAA NA ANG SSL (padlock) SA IMONG DOMAIN
+# RewriteEngine On
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

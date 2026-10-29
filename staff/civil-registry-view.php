@@ -144,9 +144,6 @@ require_once __DIR__ . '/includes/staff-header.php';
         <div class="cr-doc-field"><div class="f-label">City/Municipality</div><div class="f-value"><?= htmlspecialchars(field($row, 'city_municipality', '—')) ?></div></div>
         <div class="cr-doc-field"><div class="f-label">Province</div><div class="f-value">Bukidnon</div></div>
         <div class="cr-doc-field"><div class="f-label">Book No.</div><div class="f-value"><?= htmlspecialchars(field($row, 'book_no', '—')) ?></div></div>
-        <div class="cr-doc-field"><div class="f-label">Page No.</div><div class="f-value"><?= htmlspecialchars(field($row, 'page_no', '—')) ?></div></div>
-        <?php $datePrepared = field($row, 'date_prepared'); ?>
-        <div class="cr-doc-field"><div class="f-label">Date Prepared</div><div class="f-value"><?= $datePrepared ? date('F j, Y', strtotime($datePrepared)) : '—' ?></div></div>
         <div class="cr-doc-field"><div class="f-label"><?= $typeInfo['dateLabel'] ?></div><div class="f-value"><?= htmlspecialchars($dateOfEventDisplay) ?></div></div>
         <?php $streetVal = field($row, 'place_of_event'); if ($streetVal !== ''): ?>
           <div class="cr-doc-field"><div class="f-label"><?= $registryType === 'death' ? 'Place of Death' : 'Street' ?></div><div class="f-value"><?= htmlspecialchars($streetVal) ?></div></div>

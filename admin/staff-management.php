@@ -257,6 +257,8 @@ $iconCheck = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke
     addStaffOverlay.style.display = 'flex';
     setTimeout(function () { document.getElementById('asFullName')?.focus(); }, 30);
   });
+  // opened from the top search bar ("Add Staff Account")
+  if (/[?&]add=1/.test(location.search)) document.getElementById('openAddStaffBtn')?.click();
   document.getElementById('closeAddStaffBtn')?.addEventListener('click', () => addStaffOverlay.style.display = 'none');
   addStaffOverlay.addEventListener('click', (e) => { if (e.target === addStaffOverlay) addStaffOverlay.style.display = 'none'; });
   <?php if ($error || $success): ?>addStaffOverlay.style.display = '<?= $error ? 'flex' : 'none' ?>';<?php endif; ?>

@@ -1,46 +1,105 @@
 <?php
-// GeoGene - one place that loads private settings (API keys, DB password ...).
-// NOTHING private is stored in the Git repository. Values are read, in this order, from:
-//   1. config/secrets.php   (Hostinger: the file you edit on the server - gitignored)
-//   2. real environment variables (getenv)
-//   3. a .env file in the project root   (local dev - gitignored, see .env.example)
-// The first one that defines a key wins.
+/**
+ * GeoGene - .env loader (walay Composer / dugang nga library).
+ *
+ * Gibasa ang  .env  file sa ROOT sa project (tupad sa index.php) ug gihimo nga
+ * constants ang mga setting niini: DB_HOST, DB_NAME, DB_USER, DB_PASS,
+ * SMTP_USER, SMTP_PASS, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ID_VERIFY_PEPPER.
+ * Mahimo sab nga kuhaon sa ubang code gamit ang  geogene_env('SMTP_FROM_EMAIL', 'default').
+ *
+ * - Kung naay .env  -> .env ra ang gamiton.
+ * - Kung WALAY .env -> mo-fallback sa daan nga  config/secrets.php  (kung naa).
+ * - Kung walay duha -> gamiton ang XAMPP defaults (root, walay password).
+ *
+ * I-require_once kini sa matag config file - usa ra kini mo-load bisan ilang ihap.
+ */
+if (!function_exists('geogene_env')) {
 
-if (defined('GEOGENE_ENV_LOADED')) return;
-define('GEOGENE_ENV_LOADED', true);
+    /** I-parse ang sulod sa .env -> array. Suporta ang "quotes", # comments, CRLF (Windows), BOM. */
+    function geogene_env_parse(string $text): array
+    {
+        $text = preg_replace('/^\xEF\xBB\xBF/', '', $text);       // UTF-8 BOM (gidugang sa Notepad usahay)
+        $out = [];
+        foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '#') continue;
+            if (stripos($line, 'export ') === 0) $line = ltrim(substr($line, 7));
+            $eq = strpos($line, '=');
+            if ($eq === false) continue;
+            $key = trim(substr($line, 0, $eq));
+            if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) continue;
+            $val = ltrim(substr($line, $eq + 1));
 
-if (is_file(__DIR__ . '/secrets.php')) require_once __DIR__ . '/secrets.php';
-
-$__envFile = __DIR__ . '/../.env';
-$__env = [];
-if (is_file($__envFile)) {
-    foreach (file($__envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $__line) {
-        $__line = trim($__line);
-        if ($__line === '' || $__line[0] === '#' || strpos($__line, '=') === false) continue;
-        [$__k, $__v] = explode('=', $__line, 2);
-        $__k = trim($__k);
-        $__v = trim($__v);
-        if (strlen($__v) >= 2 && ($__v[0] === '"' || $__v[0] === "'") && substr($__v, -1) === $__v[0]) {
-            $__v = substr($__v, 1, -1);
+            if ($val !== '' && ($val[0] === '"' || $val[0] === "'")) {
+                $q = $val[0];
+                $buf = '';
+                $n = strlen($val);
+                for ($i = 1; $i < $n; $i++) {
+                    $c = $val[$i];
+                    if ($q === '"' && $c === '\\' && $i + 1 < $n && ($val[$i + 1] === '"' || $val[$i + 1] === '\\')) {
+                        $buf .= $val[$i + 1];
+                        $i++;
+                        continue;
+                    }
+                    if ($c === $q) break;                        // closing quote - ignore the rest of the line
+                    $buf .= $c;
+                }
+                $val = $buf;
+            } else {
+                $val = rtrim(preg_replace('/\s+#.*$/', '', $val));   // "value  # comment"
+            }
+            $out[$key] = $val;
         }
-        $__env[$__k] = $__v;
+        return $out;
+    }
+
+    /** Kuhaa ang value gikan sa .env  (o ang $default kung wala). */
+    function geogene_env(string $key, $default = null)
+    {
+        $env = $GLOBALS['GEOGENE_ENV'] ?? [];
+        return array_key_exists($key, $env) ? $env[$key] : $default;
+    }
+
+    $GLOBALS['GEOGENE_ENV'] = [];
+    $geoEnvFile = dirname(__DIR__) . '/.env';
+
+    if (is_file($geoEnvFile) && is_readable($geoEnvFile)) {
+        $GLOBALS['GEOGENE_ENV'] = geogene_env_parse((string) file_get_contents($geoEnvFile));
+        $geoEnvKeys = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS',
+                       'SMTP_USER', 'SMTP_PASS',
+                       'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+                       'ID_VERIFY_PEPPER', 'GEOGENE_PRODUCTION'];
+        foreach ($geoEnvKeys as $geoKey) {
+            if (array_key_exists($geoKey, $GLOBALS['GEOGENE_ENV']) && !defined($geoKey)) {
+                define($geoKey, $GLOBALS['GEOGENE_ENV'][$geoKey]);
+            }
+        }
+    } elseif (is_file(__DIR__ . '/secrets.php')) {
+        require_once __DIR__ . '/secrets.php';        // daan nga paagi (fallback)
     }
 }
 
-foreach ([
-    'GEOGENE_PRODUCTION',
-    'DB_HOST', 'DB_HOST_FALLBACK', 'DB_NAME', 'DB_USER', 'DB_PASS',
-    'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM_EMAIL',
-    'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_ALLOWED_DOMAIN',
-    'ID_VERIFY_PEPPER', 'YOLO_SERVICE_URL',
-] as $__key) {
-    if (defined($__key)) continue;
-    $__val = getenv($__key);
-    if ($__val === false && isset($__env[$__key])) $__val = $__env[$__key];
-    if ($__val === false || $__val === null) continue;
-    if ($__key === 'GEOGENE_PRODUCTION') {
-        $__val = in_array(strtolower((string) $__val), ['1', 'true', 'yes', 'on'], true);
+// ---------- LIVE site vs LOCAL (XAMPP) ----------
+// GEOGENE_PRODUCTION=true  in .env  -> live site.   =false -> local/testing.
+// Kung wala gi-set, auto-detect: localhost / 127.0.0.1 / *.local / LAN IP (192.168.x, 10.x) = local;
+// bisan unsa nga laing host (e.g. imong Hostinger domain) = LIVE.
+// Sa LIVE: walay PHP error nga ipakita sa browser, ug ang OTP code DILI ipakita sa screen
+// (kung pumalya ang email, dili makalusot ang tawo sa email verification).
+if (!defined('GEOGENE_PRODUCTION')) {
+    $geoFlag = geogene_env('GEOGENE_PRODUCTION', null);
+    if ($geoFlag !== null && $geoFlag !== '') {
+        define('GEOGENE_PRODUCTION', in_array(strtolower((string) $geoFlag), ['1', 'true', 'yes', 'on'], true));
+    } else {
+        $geoHost = strtolower(preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost')));
+        $geoLocal = $geoHost === 'localhost' || $geoHost === '[::1]' || $geoHost === '::1'
+            || (bool) preg_match('/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/', $geoHost)
+            || (bool) preg_match('/\.(local|test|localhost)$/', $geoHost)
+            || PHP_SAPI === 'cli';
+        define('GEOGENE_PRODUCTION', !$geoLocal);
     }
-    define($__key, $__val);
 }
-unset($__envFile, $__env, $__line, $__k, $__v, $__key, $__val);
+if (!defined('GEOGENE_SHOW_DEV_OTP')) define('GEOGENE_SHOW_DEV_OTP', !GEOGENE_PRODUCTION);
+if (GEOGENE_PRODUCTION) {
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '1');
+}

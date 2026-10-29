@@ -10,7 +10,7 @@ if (isset($_GET['approve'])) {
     exit;
 }
 if (isset($_GET['reject'])) {
-    $pdo->prepare("UPDATE users SET identity_verified = 0, status = '" . GEOGENE_DB_DISABLED . "' WHERE user_id = ? AND role = 'user'")->execute([(int) $_GET['reject']]);
+    $pdo->prepare("UPDATE users SET identity_verified = 0, status = '" . GEOGENE_DB_DISABLED . "' WHERE user_id = ?")->execute([(int) $_GET['reject']]);
     header('Location: verification-monitoring.php');
     exit;
 }
@@ -26,6 +26,21 @@ if ($search !== '') {
     $where .= " AND (full_name LIKE ? OR email LIKE ?)";
     $params[] = "%$search%"; $params[] = "%$search%";
 }
+// ---------- EXPORT TO CSV / EXCEL (everything that matches the current search, not just the first 25) ----------
+if (isset($_GET['export'])) {
+    require_once __DIR__ . '/includes/export-helper.php';
+    $exStmt = $pdo->prepare("SELECT * FROM users WHERE $where ORDER BY created_at DESC");
+    $exStmt->execute($params);
+    $exRows = [];
+    while ($r = $exStmt->fetch()) $exRows[] = gg_users_export_row($r);
+    gg_export_send(
+        $_GET['export'] === 'xlsx' ? 'xlsx' : 'csv',
+        'verification-monitoring-' . date('Ymd-His'),
+        gg_users_export_headers(), $exRows,
+        ['sheet' => 'Users', 'date_cols' => [4, 7]]
+    );
+}
+
 $stmt = $pdo->prepare("SELECT * FROM users WHERE $where ORDER BY created_at DESC LIMIT 25");
 $stmt->execute($params);
 $users = $stmt->fetchAll();
@@ -43,7 +58,15 @@ require_once __DIR__ . '/includes/staff-header.php';
 </div>
 
 <div class="panel">
-  <div class="panel-header"><span class="panel-title">User Verification Status</span></div>
+  <div class="panel-header">
+    <span class="panel-title">User Verification Status</span>
+    <span style="display:inline-flex;gap:8px;flex-wrap:wrap;">
+      <a href="verification-monitoring.php?<?= htmlspecialchars(http_build_query(array_filter(['q' => $search, 'export' => 'xlsx']))) ?>"
+         class="btn btn-outline btn-sm" title="Download ALL users<?= $search !== '' ? ' matching “' . htmlspecialchars($search) . '”' : '' ?> as an Excel file (.xlsx)">⬇ Export Excel</a>
+      <a href="verification-monitoring.php?<?= htmlspecialchars(http_build_query(array_filter(['q' => $search, 'export' => 'csv']))) ?>"
+         class="btn btn-outline btn-sm" title="Download ALL users<?= $search !== '' ? ' matching “' . htmlspecialchars($search) . '”' : '' ?> as a CSV file">⬇ Export CSV</a>
+    </span>
+  </div>
 
   <form method="GET" class="table-toolbar">
     <div class="search-box"><span><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16" style="display:inline-block;vertical-align:middle;"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg></span><input type="text" name="q" placeholder="Search by name or email..." value="<?= htmlspecialchars($search) ?>"></div>

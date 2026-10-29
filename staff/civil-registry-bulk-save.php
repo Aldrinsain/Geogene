@@ -16,7 +16,7 @@
  *     registry_type: "birth" | "marriage" | "death",
  *     records: [
  *       {
- *         registry_number, page_no?, date_prepared?, barangay, date_of_event,
+ *         registry_number, barangay, date_of_event, date_of_birth (death only),
  *         person_name,                      // "Given Middle Surname"
  *         mother_name?, father_name?,        // birth
  *         spouse_name?,                      // marriage - "Given Middle Surname" too (Mixed Case on save)
@@ -111,16 +111,10 @@ foreach ($payload['records'] as $i => $rec) {
         else $dateError = 'Date of ' . ($type === 'marriage' ? 'marriage' : ($type === 'death' ? 'death' : 'birth')) . ' "' . $rawEvent . '" is not a valid date (' . $r['why'] . '). Use mm/dd/yyyy, for example 03/04/2021.';
     }
     // Header fields of the certificate that the scan also reads (they used to be dropped on save)
-    $pageNo     = trim((string) ($rec['page_no'] ?? '')) ?: null;
+    $pageNo     = null; // Page No. is no longer collected
     $bookNo     = trim((string) ($rec['book_no'] ?? '')) ?: null;
     $cityMun    = trim((string) ($rec['city_municipality'] ?? '')) ?: null;
-    $datePrep   = null;
-    $rawPrep    = trim((string) ($rec['date_prepared'] ?? ''));
-    if ($rawPrep !== '') {
-        $r = gg_parse_date_strict($rawPrep);
-        if ($r['ok']) $datePrep = $r['ymd'];
-        elseif ($dateError === null) $dateError = 'Date prepared "' . $rawPrep . '" is not a valid date (' . $r['why'] . '). Use mm/dd/yyyy, or clear the box.';
-    }
+    $datePrep   = null; // Date Prepared is no longer collected
     if ($dateError !== null) {
         $failed[] = ['row' => $i, 'reason' => $dateError];
         continue;
@@ -169,7 +163,17 @@ foreach ($payload['records'] as $i => $rec) {
         }
     } else { // death
         $sex = in_array($rec['sex'] ?? '', ['male', 'female'], true) ? $rec['sex'] : null;
-        $dateOfBirth = null; // not collected in the bulk review table - editable later on the record's own Edit page
+        // Date of Birth of the deceased (read from the scan / typed in the review table)
+        $rawDob = trim((string) ($rec['date_of_birth'] ?? ''));
+        if ($rawDob !== '') {
+            $rd = gg_parse_date_strict($rawDob);
+            if ($rd['ok']) {
+                $dateOfBirth = $rd['ymd'];
+            } else {
+                $failed[] = ['row' => $i, 'reason' => 'Date of Birth "' . $rawDob . '" is not a valid date (' . $rd['why'] . '). Use mm/dd/yyyy, or clear the box.'];
+                continue;
+            }
+        }
     }
 
     $fullName = formatFullName($lastName, $firstName, $middleName);

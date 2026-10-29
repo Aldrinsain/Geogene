@@ -30,6 +30,13 @@ require_once __DIR__ . '/admin-header.php';
     // never serve a stale cached copy of the embedded Staff page inside
     // the iframe (this has been observed to happen even after a hard
     // refresh of the outer Admin page in some browsers).
+    // Pass along the search/filter this admin page was opened with (e.g. from the top search bar:
+    // ?q=Sain or ?type=birth) to the staff page shown inside the iframe.
+    $ggForward = [];
+    foreach (['q', 'type', 'status', 'barangay', 'year', 'sex', 'dp', 'dp_from', 'dp_to', 'qby', 'page', 'record_id', 'trail'] as $ggKey) {
+        if (isset($_GET[$ggKey]) && is_scalar($_GET[$ggKey]) && (string) $_GET[$ggKey] !== '') $ggForward[$ggKey] = (string) $_GET[$ggKey];
+    }
+    if ($ggForward) $embedSrc .= (strpos($embedSrc, '?') !== false ? '&' : '?') . http_build_query($ggForward);
     $embedSrcBusted = $embedSrc . (strpos($embedSrc, '?') !== false ? '&' : '?') . '_t=' . time();
   ?>
   <iframe id="embedFrame" src="<?= htmlspecialchars($embedSrcBusted) ?>" title="<?= htmlspecialchars($pageTitle) ?>"

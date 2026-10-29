@@ -11,16 +11,15 @@
 // Ang OTP dili lang ma-email - i-store ra sa session ug ipakita diretso sa
 // verify-email.php screen (DEV MODE banner) para makapadayon ka og testing.
 
-define('SMTP_HOST', 'smtp-relay.brevo.com');
-// SMTP_USER ug SMTP_PASS naa na sa config/secrets.php (dili i-commit sa Git).
+// Ang email settings naa na sa  .env  file (SMTP_USER, SMTP_PASS, ug kung gusto: SMTP_HOST,
+// SMTP_PORT, SMTP_FROM_NAME, SMTP_FROM_EMAIL). Dili i-commit ang .env sa Git.
 require_once __DIR__ . '/env.php';
 if (!defined('SMTP_USER')) define('SMTP_USER', '');
-if (!defined('SMTP_PASS')) define('SMTP_PASS', '');   // walay secrets.php -> DEV MODE (OTP ipakita sa screen)
-define('SMTP_PORT', 587);
-// On the LIVE site (GEOGENE_PRODUCTION = true in secrets.php) never show OTP codes on screen.
-if (!defined('GEOGENE_SHOW_DEV_OTP')) define('GEOGENE_SHOW_DEV_OTP', !(defined('GEOGENE_PRODUCTION') && GEOGENE_PRODUCTION));
-define('SMTP_FROM_NAME', 'GeoGene');
-if (!defined('SMTP_FROM_EMAIL')) define('SMTP_FROM_EMAIL', 'aldrinpilotonsain2003@gmail.com'); // verified sender sa Brevo
+if (!defined('SMTP_PASS')) define('SMTP_PASS', '');   // walay SMTP_PASS -> DEV MODE (OTP ipakita sa screen)
+define('SMTP_HOST', geogene_env('SMTP_HOST', 'smtp-relay.brevo.com'));
+define('SMTP_PORT', (int) geogene_env('SMTP_PORT', 587));
+define('SMTP_FROM_NAME', geogene_env('SMTP_FROM_NAME', 'GeoGene'));
+define('SMTP_FROM_EMAIL', geogene_env('SMTP_FROM_EMAIL', 'aldrinpilotonsain2003@gmail.com')); // verified sender sa Brevo
 
 $PHPMAILER_PATH = __DIR__ . '/../lib/PHPMailer/PHPMailer.php';
 define('PHPMAILER_AVAILABLE', file_exists($PHPMAILER_PATH));

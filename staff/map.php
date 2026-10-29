@@ -757,6 +757,16 @@ function highlightMarker(entry, isFamilyClick) {
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.map-search-wrap')) results.classList.remove('show');
   });
+
+  // Opened from the top search bar ("Locate X on the Map") -> run this same search straight away
+  const ggQ = new URLSearchParams(window.location.search).get('q');
+  if (ggQ) {
+    setTimeout(() => {
+      input.value = ggQ;
+      input.dispatchEvent(new Event('input'));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }, 500);
+  }
 })();
 </script>
 

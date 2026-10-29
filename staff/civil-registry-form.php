@@ -9,13 +9,13 @@
  * output) - this page is just a normal data-entry form.
  *
  * Fields per type:
- *   BIRTH:    Page No., Registry No., Barangay, Date Prepared,
+ *   BIRTH:    Registry No., Barangay,
  *             Date of Birth, Name of Child, Name of Mother, Name of Father
- *   MARRIAGE: Page No., Registry No., Barangay, Date Prepared,
+ *   MARRIAGE: Registry No., Barangay,
  *             Date of Marriage, Name of Wife, Name of Husband,
  *             Name of Mother (W), Name of Mother (H),
  *             Name of Father (W), Name of Father (H)
- *   DEATH:    Page No., Registry No., Barangay, Date Prepared,
+ *   DEATH:    Registry No., Barangay,
  *             Name of Deceased, Sex, Date of Death, Date of Birth,
  *             Age at Time of Death, Place of Death, Civil Status,
  *             Name of Father, Maiden Name of Mother, Cause of Death
@@ -109,11 +109,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!in_array($type, $validTypes, true)) $type = 'birth';
 
     $registryNumber = trim($_POST['registry_number'] ?? '');
-    $pageNo         = trim($_POST['page_no'] ?? '');
     // Barangay in ANY case (DICKLUM / dicklum) -> the exact spelling in the barangays table, so the Map always finds it
     $barangay       = (string) gg_canonical_barangay($pdo, $_POST['barangay'] ?? '');
     $dateErrors     = [];
-    $datePrepared   = ggCheckPostedDate($_POST['date_prepared'] ?? '', 'Date Prepared', $dateErrors);
 
     // "Name of Child / Husband / Deceased" is now ONE box on the form -
     // "Given Name Middle Name Surname" - parsed back into the existing
@@ -192,9 +190,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $suffix = $isEdit ? ($record['suffix'] ?? null) : null;
         $remarks = $isEdit ? ($record['remarks'] ?? null) : null;
         $zone = $isEdit ? ($record['zone'] ?? null) : null;
+        // Page No. / Date Prepared are no longer on the form - an edit keeps what is already stored.
+        $pageNoKeep   = $isEdit ? ($record['page_no'] ?? null) : null;
+        $datePrepKeep = $isEdit ? ($record['date_prepared'] ?? null) : null;
 
         $data = [
-            $type, $registryNumber ?: null, $bookNo, $pageNo ?: null, $cityMunicipality, $datePrepared,
+            $type, $registryNumber ?: null, $bookNo, $pageNoKeep, $cityMunicipality, $datePrepKeep,
             $fullName ?: null, $firstName, $middleName ?: null, $lastName, $suffix,
             $sex, $civilStatus, $dateOfEvent, $dateOfBirth, $placeOfEvent,
             $fatherName, $motherName, $spouseName, $wifeFatherName, $wifeMotherName,
@@ -360,21 +361,7 @@ require_once __DIR__ . '/includes/staff-header.php';
       </div>
     </div>
 
-    <div class="form-grid-2">
-      <div class="form-row"><label>Page No.</label><input type="text" name="page_no" autocomplete="off" value="<?= htmlspecialchars($record['page_no'] ?? '') ?>"></div>
-      <div class="form-row"><label>Barangay</label><input type="text" name="barangay" autocomplete="off" value="<?= htmlspecialchars($record['barangay'] ?? '') ?>"></div>
-    </div>
-    <div class="form-grid-2">
-      <div class="form-row">
-        <label>Date Prepared</label>
-        <div class="date-mask-wrap">
-          <input type="text" class="dateMaskDisplay" data-real="datePreparedReal" data-label="Date Prepared" placeholder="mm/dd/yyyy" inputmode="numeric" autocomplete="off" maxlength="10"
-                 value="<?= ggDisplayDate($record['date_prepared'] ?? '') ?>">
-          <input type="hidden" name="date_prepared" id="datePreparedReal" value="<?= htmlspecialchars(ggIsoOrEmpty($record['date_prepared'] ?? '')) ?>">
-          <?= dateMaskIconSvg() ?>
-        </div>
-      </div>
-    </div>
+    <div class="form-row"><label>Barangay</label><input type="text" name="barangay" autocomplete="off" value="<?= htmlspecialchars($record['barangay'] ?? '') ?>"></div>
 
     <!-- ============== BIRTH fields ============== -->
     <div id="fields-birth">
@@ -769,7 +756,6 @@ function dateMaskIconSvg(): string
       if (applyText('[name="place_of_event"]', 'place_of_event', legacy.place_of_event)) filledCount++;
       if (applyText('[name="cause_of_death"]', 'cause_of_death', legacy.cause_of_death)) filledCount++;
       if (applyText('[name="registry_number"]', 'registry_number', common.registry_number)) filledCount++;
-      if (applyText('[name="page_no"]', 'page_no', common.page_no)) filledCount++;
       if (applyText('[name="barangay"]', 'barangay', common.barangay)) filledCount++;
 
       var dateOfEventReal = document.getElementById('dateOfEventReal');
@@ -782,12 +768,6 @@ function dateMaskIconSvg(): string
       if (legacy.date_of_birth && dobReal && !scanFilledKeys.date_of_birth && !dobReal.value) {
         setDateField('dateOfBirthReal', legacy.date_of_birth);
         scanFilledKeys.date_of_birth = true;
-        filledCount++;
-      }
-      var dpReal = document.getElementById('datePreparedReal');
-      if (common.date_prepared && dpReal && !scanFilledKeys.date_prepared && !dpReal.value) {
-        setDateField('datePreparedReal', common.date_prepared);
-        scanFilledKeys.date_prepared = true;
         filledCount++;
       }
 

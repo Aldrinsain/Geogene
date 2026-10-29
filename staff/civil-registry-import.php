@@ -197,7 +197,7 @@ require_once __DIR__ . '/includes/staff-header.php';
       present (e.g. "Name of Child" = Birth). Extra columns in your file are ignored.
     </p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      <?php foreach (['Barangay', 'Zone', 'City/Municipality', 'Book No.', 'Page No.', 'Registry No.', 'Date Prepared'] as $col): ?>
+      <?php foreach (['Barangay', 'Zone', 'City/Municipality', 'Book No.', 'Registry No.'] as $col): ?>
         <span class="badge gray"><?= htmlspecialchars($col) ?></span>
       <?php endforeach; ?>
     </div>
@@ -271,8 +271,8 @@ require_once __DIR__ . '/includes/staff-header.php';
       $colMap = $preview['colMap'] ?? [];
       $fieldLabels = [
           'barangay' => 'Barangay', 'zone' => 'Zone/Purok/Sitio', 'city_municipality' => 'City/Municipality',
-          'book_no' => 'Book No.', 'page_no' => 'Page No.', 'registry_number' => 'Registry No.',
-          'date_prepared' => 'Date Prepared', 'date_of_event' => 'Date of Birth/Marriage/Death',
+          'book_no' => 'Book No.', 'registry_number' => 'Registry No.',
+          'date_of_event' => 'Date of Birth/Marriage/Death',
           'name_of_child' => 'Name of Child', 'name_of_wife' => 'Name of Wife',
           'name_of_husband' => 'Name of Husband', 'name_of_deceased' => 'Name of Deceased',
           'full_name' => 'Full Name', 'first_name' => 'First Name', 'last_name' => 'Last Name',

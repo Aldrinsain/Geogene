@@ -39,7 +39,7 @@
  * Response JSON:
  *   { ok:true, side, image_path, image_path_2,
  *     legacy: {...simple column values...},
- *     common: {registry_number?, city_municipality?, date_prepared?, barangay?},
+ *     common: {registry_number?, city_municipality?, barangay?},
  *     cert_fields: {...all raw non-empty certificate fields...},
  *     confidence: {...key => {value,confidence,status}, only in old-certificate mode...} }
  *   or { ok:false, error }
@@ -291,7 +291,7 @@ foreach (['father_name', 'mother_name', 'spouse_name', 'wife_father_name', 'wife
 if (isset($legacy['place_of_event'])) $legacy['place_of_event'] = gg_title_case($legacy['place_of_event']);
 
 $common = [];
-foreach (['registry_number', 'page_no', 'city_municipality', 'date_prepared', 'barangay'] as $k) {
+foreach (['registry_number', 'city_municipality', 'barangay'] as $k) {
     if (!empty(trim((string) ($certFields[$k] ?? '')))) $common[$k] = trim($certFields[$k]);
 }
 if (!empty($common['barangay'])) $common['barangay'] = (string) gg_canonical_barangay($pdo, $common['barangay']);
@@ -315,9 +315,9 @@ if (!empty($legacy['date_of_event'])) {
     $n = $normalizeDate($legacy['date_of_event']);
     if ($n) $legacy['date_of_event'] = $n;
 }
-if (!empty($common['date_prepared'])) {
-    $n = $normalizeDate($common['date_prepared']);
-    if ($n) $common['date_prepared'] = $n;
+if (!empty($legacy['date_of_birth'])) {
+    $n = $normalizeDate($legacy['date_of_birth']);
+    if ($n) $legacy['date_of_birth'] = $n;
 }
 
 respond([

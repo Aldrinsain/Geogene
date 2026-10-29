@@ -16,16 +16,28 @@ $hasCivilStatusCol = (bool) $pdo->query("SHOW COLUMNS FROM users LIKE 'civil_sta
 // ---------- FORM 1: Profile details (left panel) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === 'profile') {
     $fullName = trim($_POST['full_name'] ?? '');
+    $email = strtolower(trim($_POST['email'] ?? ''));
     $phone = trim($_POST['phone_number'] ?? '');
     $address = trim($_POST['address'] ?? '');
     $gender = $_POST['gender'] ?? '';
     $civilStatus = $_POST['civil_status'] ?? '';
 
+    $emailTaken = false;
+    if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $chk = $pdo->prepare("SELECT 1 FROM users WHERE email = ? AND user_id <> ? LIMIT 1");
+        $chk->execute([$email, $_SESSION['staff_id']]);
+        $emailTaken = (bool) $chk->fetchColumn();
+    }
+
     if ($fullName === '') {
         $error = 'Full Name is required.';
+    } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 150) {
+        $error = 'Please enter a valid email address.';
+    } elseif ($emailTaken) {
+        $error = 'That email address is already used by another account.';
     } else {
-        $setParts = ['full_name = ?', 'phone_number = ?'];
-        $params = [$fullName, $phone];
+        $setParts = ['full_name = ?', 'email = ?', 'phone_number = ?'];
+        $params = [$fullName, $email, $phone];
 
         if ($hasAddressCol) { $setParts[] = 'address = ?'; $params[] = $address; }
         if (in_array($gender, ['male', 'female', 'prefer_not_to_say'])) { $setParts[] = 'gender = ?'; $params[] = $gender; }
@@ -39,7 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === '
         $_SESSION['staff_name'] = $fullName;
         $success = 'Your profile has been updated successfully.';
 
+        $_SESSION['staff_email'] = $email;
+
         $staff['full_name'] = $fullName;
+        $staff['email'] = $email;
         $staff['phone_number'] = $phone;
         if ($hasAddressCol) $staff['address'] = $address;
         $staff['gender'] = $gender;
@@ -190,7 +205,7 @@ require_once __DIR__ . '/includes/staff-header.php';
       </div>
       <div class="form-row">
         <label>Email Address</label>
-        <input type="email" value="<?= htmlspecialchars($staff['email']) ?>" disabled style="background:var(--bg-page);">
+        <input type="email" name="email" value="<?= htmlspecialchars($staff['email']) ?>" maxlength="150" required>
       </div>
       <div class="form-row">
         <label>Contact Number</label>

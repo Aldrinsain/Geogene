@@ -218,32 +218,27 @@ require_once __DIR__ . '/includes/staff-header.php';
   // Add Record form's per-type field groups.
   var COLUMNS = {
     birth: [
-      { key: 'page_no',         label: 'Page No.' },
       { key: 'registry_number', label: 'Registry No.' },
       { key: 'barangay',        label: 'Barangay' },
-      { key: 'date_prepared',   label: 'Date Prepared', type: 'date' },
       { key: 'person_name',     label: 'Name of Child' },
       { key: 'date_of_event',   label: 'Date of Birth', type: 'date' },
       { key: 'mother_name',     label: 'Name of Mother' },
       { key: 'father_name',     label: 'Name of Father' },
     ],
     marriage: [
-      { key: 'page_no',         label: 'Page No.' },
       { key: 'registry_number', label: 'Registry No.' },
       { key: 'barangay',        label: 'Barangay' },
-      { key: 'date_prepared',   label: 'Date Prepared', type: 'date' },
       { key: 'person_name',     label: 'Name of Husband' },
       { key: 'spouse_name',     label: 'Name of Wife' },
       { key: 'date_of_event',   label: 'Date of Marriage', type: 'date' },
     ],
     death: [
-      { key: 'page_no',         label: 'Page No.' },
       { key: 'registry_number', label: 'Registry No.' },
       { key: 'barangay',        label: 'Barangay' },
-      { key: 'date_prepared',   label: 'Date Prepared', type: 'date' },
       { key: 'person_name',     label: 'Name of Deceased' },
       { key: 'sex',             label: 'Sex', options: ['male', 'female'] },
       { key: 'date_of_event',   label: 'Date of Death', type: 'date' },
+      { key: 'date_of_birth',   label: 'Date of Birth', type: 'date' },
     ],
   };
 
@@ -405,7 +400,9 @@ require_once __DIR__ . '/includes/staff-header.php';
     var missing = [];
     if (!f.registry_number) missing.push('Registry No.');
     if (nameWordCount(f.person_name) < 2) missing.push('Name');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date_of_event || '')) missing.push('Date');
+    var isoDate = /^\d{4}-\d{2}-\d{2}$/;
+    if (!isoDate.test(f.date_of_event || '')) missing.push(type === 'birth' ? 'Date of Birth' : (type === 'marriage' ? 'Date of Marriage' : 'Date of Death'));
+    if (type === 'death' && !isoDate.test(f.date_of_birth || '')) missing.push('Date of Birth');
     if (type === 'birth') {
       if (nameWordCount(f.mother_name) < 2) missing.push('Mother');
       if (nameWordCount(f.father_name) < 2) missing.push('Father');
@@ -504,11 +501,11 @@ require_once __DIR__ . '/includes/staff-header.php';
           // barangay to the official spelling, so those are used as-is - no scan-specific
           // text patches here (the old ones, e.g. 'hedge', 'Icklum', also mangled real names).
           row.fields.registry_number = common.registry_number || '';
-          row.fields.page_no = common.page_no || '';
-          row.fields.date_prepared = (common.date_prepared || '').trim();
           row.fields.city_municipality = common.city_municipality || '';
           row.fields.barangay = common.barangay || '';
           row.fields.date_of_event = legacy.date_of_event || '';
+          // Death certificates also carry the deceased's Date of Birth (Birth certificates use Date of Birth as the event date above)
+          row.fields.date_of_birth = legacy.date_of_birth || '';
 
           row.fields.person_name = [legacy.first_name, legacy.middle_name, legacy.last_name]
             .map(cleanName)
