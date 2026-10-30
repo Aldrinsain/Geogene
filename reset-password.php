@@ -1,43 +1,33 @@
 <?php
 // GeoGene - Civil Registry STAFF reset-password. Pairs with forgot-password.php.
-// Separate from auth/reset-password.php (regular citizen/user accounts).
+// Logic lives in config/password-reset.php (hashed code, 10 min expiry, single use, 5 tries).
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/password-reset.php';   // loads db.php + mail.php too
 
-if (!isset($_SESSION['staff_reset_user_id'])) {
+$ctx = gg_pr_context('staff');
+if (!isset($_SESSION[$ctx['uid']])) {
     header('Location: forgot-password.php');
     exit;
 }
 
-$userId = $_SESSION['staff_reset_user_id'];
-$email  = $_SESSION['staff_reset_email'] ?? '';
+$userId = (int) $_SESSION[$ctx['uid']];
+$email  = $_SESSION[$ctx['email']] ?? '';
 $error  = '';
+$notice = '';
 $success = false;
 
+// Resend (60s cooldown + hourly limits are enforced inside the helper)
 if (isset($_GET['resend'])) {
-    $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-    $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
-
-    $pdo->prepare("INSERT INTO otp_codes (user_id, otp_code, purpose, expires_at) VALUES (?, ?, 'password_reset', ?)")
-        ->execute([$userId, $otp, $expiresAt]);
-
-    require_once __DIR__ . '/config/mail.php';
-    $stmtName = $pdo->prepare("SELECT full_name FROM users WHERE user_id = ?");
-    $stmtName->execute([$userId]);
-    $name = $stmtName->fetchColumn();
-    $emailSent = send_password_reset_email($email, $name, $otp);
-
-    if (!$emailSent) {
-        if (GEOGENE_SHOW_DEV_OTP) $_SESSION['staff_reset_otp_preview'] = $otp;
-        $error = 'A new code has been sent. (Dev mode: shown below.)';
+    $result = gg_pr_request_code($pdo, $email, 'staff');
+    if ($result['status'] === 'sent') {
+        $notice = 'A new code has been sent to your email.';
     } else {
-        unset($_SESSION['staff_reset_otp_preview']);
-        $error = 'A new code has been sent to your email.';
+        $error = $result['message'] ?: 'Could not resend the code. Please try again.';
     }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $enteredOtp      = implode('', $_POST['otp'] ?? []);
+    $enteredOtp      = preg_replace('/\D/', '', implode('', (array) ($_POST['otp'] ?? [])));
     $newPassword     = $_POST['new_password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
@@ -48,25 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($newPassword !== $confirmPassword) {
         $error = 'The two passwords you entered do not match.';
     } else {
-        $stmt = $pdo->prepare("
-            SELECT * FROM otp_codes
-            WHERE user_id = ? AND otp_code = ? AND purpose = 'password_reset'
-              AND is_used = 0 AND expires_at >= ?
-            ORDER BY otp_id DESC LIMIT 1
-        ");
-        $stmt->execute([$userId, $enteredOtp, date('Y-m-d H:i:s')]);
-        $otpRow = $stmt->fetch();
-
-        if (!$otpRow) {
-            $error = 'The code is incorrect or has expired. Please try again.';
-        } else {
-            $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE otp_id = ?")->execute([$otpRow['otp_id']]);
-
-            $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-            $pdo->prepare("UPDATE users SET password_hash = ? WHERE user_id = ? AND role = 'office_head'")->execute([$newHash, $userId]);
-
-            unset($_SESSION['staff_reset_user_id'], $_SESSION['staff_reset_email'], $_SESSION['staff_reset_otp_preview']);
+        $res = gg_pr_verify_and_reset($pdo, $userId, $enteredOtp, $newPassword, 'staff');
+        if ($res['ok']) {
+            gg_pr_clear_session('staff');
             $success = true;
+        } else {
+            $error = $res['message'];
         }
     }
 }
@@ -157,6 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <p class="login-sub">Enter the 6-digit code sent to<br><strong><?= htmlspecialchars($email) ?></strong> and choose a new password.</p>
 
     <?php if ($error): ?><p class="error-text"><?= htmlspecialchars($error) ?></p><?php endif; ?>
+    <?php if ($notice): ?><p class="error-text" style="color:#b8ffd6;"><?= htmlspecialchars($notice) ?></p><?php endif; ?>
 
     <?php if (!empty($_SESSION['staff_reset_otp_preview'])): ?>
       <div class="dev-otp-box">
@@ -192,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       </div>
 
-      <button type="submit" class="login-btn" style="border:1px solid rgba(255,255,255,0.35);">Reset Password</button>
+      <button type="submit" class="login-btn" id="rpBtn" style="border:1px solid rgba(255,255,255,0.35);">Reset Password</button>
     </form>
 
     <p class="footer-text">Didn't receive the code? <a href="reset-password.php?resend=1">Resend Code</a></p>
@@ -205,11 +183,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
+const rpForm = document.getElementById('resetForm');
+if (rpForm) {
+  rpForm.addEventListener('submit', () => {
+    const b = document.getElementById('rpBtn');
+    b.disabled = true;
+    b.textContent = 'Resetting...';
+  });
+}
 const boxes = document.querySelectorAll('.otp-box');
 boxes.forEach((box, i) => {
   box.addEventListener('input', () => {
     box.value = box.value.replace(/[^0-9]/g, '');
     if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+  });
+  box.addEventListener('paste', (e) => {
+    const t = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+    if (t.length > 1) {
+      e.preventDefault();
+      t.split('').forEach((d, k) => { if (boxes[k]) boxes[k].value = d; });
+      boxes[Math.min(t.length, boxes.length) - 1].focus();
+    }
   });
   box.addEventListener('keydown', (e) => {
     if (e.key === 'Backspace' && !box.value && i > 0) boxes[i - 1].focus();

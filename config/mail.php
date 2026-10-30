@@ -21,14 +21,24 @@ define('SMTP_PORT', (int) geogene_env('SMTP_PORT', 587));
 define('SMTP_FROM_NAME', geogene_env('SMTP_FROM_NAME', 'GeoGene'));
 define('SMTP_FROM_EMAIL', geogene_env('SMTP_FROM_EMAIL', 'aldrinpilotonsain2003@gmail.com')); // verified sender sa Brevo
 
-$PHPMAILER_PATH = __DIR__ . '/../lib/PHPMailer/PHPMailer.php';
-define('PHPMAILER_AVAILABLE', file_exists($PHPMAILER_PATH));
-
-if (PHPMAILER_AVAILABLE) {
-    require_once __DIR__ . '/../lib/PHPMailer/Exception.php';
-    require_once __DIR__ . '/../lib/PHPMailer/PHPMailer.php';
-    require_once __DIR__ . '/../lib/PHPMailer/SMTP.php';
+// Load PHPMailer defensively: if a file is missing, partly uploaded, or not compatible with the
+// server's PHP version, we log the exact reason and carry on with "email not available" instead of
+// dying with an HTTP 500.
+$PHPMAILER_DIR = __DIR__ . '/../lib/PHPMailer/';
+$phpmailerOk = false;
+if (is_file($PHPMAILER_DIR . 'PHPMailer.php') && is_file($PHPMAILER_DIR . 'SMTP.php') && is_file($PHPMAILER_DIR . 'Exception.php')) {
+    try {
+        require_once $PHPMAILER_DIR . 'Exception.php';
+        require_once $PHPMAILER_DIR . 'PHPMailer.php';
+        require_once $PHPMAILER_DIR . 'SMTP.php';
+        $phpmailerOk = class_exists('\\PHPMailer\\PHPMailer\\PHPMailer', false);
+    } catch (\Throwable $e) {
+        error_log('[GeoGene mail] PHPMailer could not be loaded on PHP ' . PHP_VERSION . ': ' . $e->getMessage());
+    }
+} else {
+    error_log('[GeoGene mail] lib/PHPMailer/ is missing one of Exception.php, PHPMailer.php, SMTP.php');
 }
+define('PHPMAILER_AVAILABLE', $phpmailerOk);
 
 // ---------------------------------------------------------------------------
 // Shared SMTP sender.

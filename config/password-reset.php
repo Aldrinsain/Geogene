@@ -30,6 +30,33 @@ const GG_PR_MAX_PER_USER  = 5;     // per hour
 const GG_PR_MAX_PER_IP    = 10;    // per hour
 const GG_PR_MAX_ATTEMPTS  = 5;
 
+/**
+ * Which login area is resetting a password. Each area keeps its own session keys
+ * (so a citizen, staff and admin reset can't mix) and only accepts its own roles.
+ *   user  = citizen app  (auth/*.php)      any role, like before
+ *   staff = Civil Registry staff (root forgot/reset-password.php)  role office_head
+ *   admin = admin/forgot-password.php, admin/reset-password.php    role admin
+ */
+function gg_pr_context(string $who): array {
+    switch ($who) {
+        case 'staff':
+            return ['roles' => ['office_head'], 'uid' => 'staff_reset_user_id', 'email' => 'staff_reset_email',
+                    'preview' => 'staff_reset_otp_preview', 'cool' => 'staff_pr_last_request'];
+        case 'admin':
+            return ['roles' => ['admin'], 'uid' => 'admin_reset_user_id', 'email' => 'admin_reset_email',
+                    'preview' => 'admin_reset_otp_preview', 'cool' => 'admin_pr_last_request'];
+        default:
+            return ['roles' => [], 'uid' => 'reset_user_id', 'email' => 'reset_email',
+                    'preview' => 'dev_otp_preview', 'cool' => 'pr_last_request'];
+    }
+}
+
+/** Remove the reset session data of one area (after a successful reset). */
+function gg_pr_clear_session(string $who): void {
+    $c = gg_pr_context($who);
+    unset($_SESSION[$c['uid']], $_SESSION[$c['email']], $_SESSION[$c['preview']], $_SESSION[$c['cool']]);
+}
+
 /** Make sure otp_codes has the columns we need. Returns true when ready. */
 function gg_pr_ensure_schema(PDO $pdo): bool {
     static $ready = null;
@@ -63,7 +90,9 @@ function gg_pr_client_ip(): string {
  * status: sent | unknown (no such account - shown to the user exactly like "sent")
  *         | invalid_email | cooldown | limit | mail_failed | error
  */
-function gg_pr_request_code(PDO $pdo, string $emailRaw, array $roles = []): array {
+function gg_pr_request_code(PDO $pdo, string $emailRaw, string $who = 'user'): array {
+    $c = gg_pr_context($who);
+    $roles = $c['roles'];
     $email = strtolower(trim($emailRaw));
     $res = ['status' => 'error', 'message' => 'Something went wrong. Please try again in a moment.',
             'user_id' => null, 'email' => $email, 'dev_code' => null, 'wait' => 0];
@@ -73,7 +102,7 @@ function gg_pr_request_code(PDO $pdo, string $emailRaw, array $roles = []): arra
     }
 
     // Cooldown that applies to everybody (also unknown emails), kept in the session.
-    $last = (int) ($_SESSION['pr_last_request'] ?? 0);
+    $last = (int) ($_SESSION[$c['cool']] ?? 0);
     if ($last && time() - $last < GG_PR_COOLDOWN_SEC) {
         $wait = GG_PR_COOLDOWN_SEC - (time() - $last);
         return ['status' => 'cooldown', 'wait' => $wait,
@@ -93,11 +122,11 @@ function gg_pr_request_code(PDO $pdo, string $emailRaw, array $roles = []): arra
         $st->execute($params);
         $user = $st->fetch();
 
-        $_SESSION['pr_last_request'] = time();
+        $_SESSION[$c['cool']] = time();
 
         if (!$user) {
             // Same outward behaviour as a real send, so the form can't be used to discover accounts.
-            unset($_SESSION['reset_user_id'], $_SESSION['reset_email'], $_SESSION['dev_otp_preview']);
+            unset($_SESSION[$c['uid']], $_SESSION[$c['email']], $_SESSION[$c['preview']]);
             return ['status' => 'unknown', 'message' => ''] + $res;
         }
 
@@ -142,20 +171,20 @@ function gg_pr_request_code(PDO $pdo, string $emailRaw, array $roles = []): arra
         if (!$sent) {
             // Dev/localhost without SMTP: show the code on screen so testing can continue.
             if (GEOGENE_SHOW_DEV_OTP) {
-                $_SESSION['reset_user_id'] = $uid;
-                $_SESSION['reset_email']   = $email;
-                $_SESSION['dev_otp_preview'] = $code;
+                $_SESSION[$c['uid']]     = $uid;
+                $_SESSION[$c['email']]   = $email;
+                $_SESSION[$c['preview']] = $code;
                 return ['status' => 'sent', 'message' => '', 'user_id' => $uid, 'dev_code' => $code] + $res;
             }
             $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE otp_id = ?")->execute([$otpId]);
-            $_SESSION['pr_last_request'] = 0;   // let them retry right away
+            $_SESSION[$c['cool']] = 0;   // let them retry right away
             return ['status' => 'mail_failed',
                     'message' => "We couldn't send the email right now. Please try again in a few minutes."] + $res;
         }
 
-        $_SESSION['reset_user_id'] = $uid;
-        $_SESSION['reset_email']   = $email;
-        unset($_SESSION['dev_otp_preview']);
+        $_SESSION[$c['uid']]   = $uid;
+        $_SESSION[$c['email']] = $email;
+        unset($_SESSION[$c['preview']]);
         return ['status' => 'sent', 'message' => '', 'user_id' => $uid] + $res;
 
     } catch (Throwable $e) {
@@ -168,10 +197,17 @@ function gg_pr_request_code(PDO $pdo, string $emailRaw, array $roles = []): arra
  * Check the code and set the new password.
  * Returns ['ok' => bool, 'message' => string, 'role' => string|null]
  */
-function gg_pr_verify_and_reset(PDO $pdo, int $userId, string $code, string $newPassword): array {
+function gg_pr_verify_and_reset(PDO $pdo, int $userId, string $code, string $newPassword, string $who = 'user'): array {
+    $roles = gg_pr_context($who)['roles'];
     $fail = function ($m) { return ['ok' => false, 'message' => $m, 'role' => null]; };
     try {
         if (!gg_pr_ensure_schema($pdo)) return $fail('Something went wrong. Please try again in a moment.');
+
+        if ($roles) {   // staff/admin pages only ever reset accounts with their own role
+            $rr = $pdo->prepare("SELECT role FROM users WHERE user_id = ?");
+            $rr->execute([$userId]);
+            if (!in_array($rr->fetchColumn(), $roles, true)) return $fail('This reset request is not valid. Please start again.');
+        }
 
         $st = $pdo->prepare("SELECT otp_id, otp_code, attempts FROM otp_codes
                              WHERE user_id = ? AND purpose = 'password_reset' AND is_used = 0 AND expires_at >= ?

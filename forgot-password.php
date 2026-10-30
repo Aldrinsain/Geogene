@@ -1,48 +1,21 @@
 <?php
 // GeoGene - Civil Registry STAFF forgot-password entry point.
-// This is SEPARATE from auth/forgot-password.php (which is for regular
-// citizen/user accounts). Only looks up accounts with role = 'office_head'.
-// Pairs with reset-password.php and login.php, all at site root.
+// Logic lives in config/password-reset.php (shared, secure, never throws a 500).
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/password-reset.php';   // loads db.php + mail.php too
 
 $error = '';
 $sent = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
+    $result = gg_pr_request_code($pdo, (string) ($_POST['email'] ?? ''), 'staff');
 
-    if ($email === '') {
-        $error = 'Please enter your staff email address.';
-    } else {
-        $stmt = $pdo->prepare("SELECT user_id, full_name FROM users WHERE email = ? AND role = 'office_head'");
-        $stmt->execute([$email]);
-        $staff = $stmt->fetch();
-
-        if ($staff) {
-            $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-            $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
-
-            $pdo->prepare("INSERT INTO otp_codes (user_id, otp_code, purpose, expires_at) VALUES (?, ?, 'password_reset', ?)")
-                ->execute([$staff['user_id'], $otp, $expiresAt]);
-
-            require_once __DIR__ . '/config/mail.php';
-            $emailSent = send_password_reset_email($email, $staff['full_name'], $otp);
-
-            $_SESSION['staff_reset_user_id'] = $staff['user_id'];
-            $_SESSION['staff_reset_email'] = $email;
-
-            if (!$emailSent) {
-                if (GEOGENE_SHOW_DEV_OTP) $_SESSION['staff_reset_otp_preview'] = $otp;
-            } else {
-                unset($_SESSION['staff_reset_otp_preview']);
-            }
-        }
-
-        // Same "sent" state whether or not the email was found/matched a
-        // staff account, so this form can't be used to check which emails
-        // have staff access.
+    if ($result['status'] === 'sent' || $result['status'] === 'unknown') {
+        // "unknown" looks identical to "sent" on purpose, so this form can't be
+        // used to check which emails have Civil Registry STAFF access.
         $sent = true;
+    } else {
+        $error = $result['message'];
     }
 }
 ?>
@@ -134,19 +107,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php if (!$sent): ?>
     <div class="icon-wrapper">
     <!-- SVG Icon -->
-    <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="mdi-account-key" width="70" height="70" viewBox="0 0 24 24"><path d="M11,10V12H10V14H8V12H5.83C5.42,13.17 4.31,14 3,14A3,3 0 0,1 0,11A3,3 0 0,1 3,8C4.31,8 5.42,8.83 5.83,10H11M3,10A1,1 0 0,0 2,11A1,1 0 0,0 3,12A1,1 0 0,0 4,11A1,1 0 0,0 3,10M16,14C18.67,14 24,15.34 24,18V20H8V18C8,15.34 13.33,14 16,14M16,12A4,4 0 0,1 12,8A4,4 0 0,1 16,4A4,4 0 0,1 20,8A4,4 0 0,1 16,12Z" /></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="mdi-account-key" width="70" height="70" viewBox="0 0 24 24"><path d="M11,10V12H10V14H8V12H5.83C5.42,13.17 4.31,14 3,14A3,3 0 0,1 0,11A3,3 0 0,1 3,8C4.31,8 5.42,8.83 5.83,10H11M3,10A1,1 0 0,0 2,11A1,1 0 0,0 3,12A1,1 0 0,0 4,11A1,1 0 0,0 3,10M16,14C18.67,14 24,15.34 24,18V20H8V18C8,15.34 13.33,14 16,14M16,12A4,4 0 0,1 12,8A4,4 0 0,1 16,4A4,4 0 0,1 20,8A4,4 0 0,1 16,12Z" /></svg>
 </div>
     <h1 class="login-title">Forgot Password</h1>
     <p class="login-sub">Enter your staff email address and we'll send a 6-digit reset code to it.</p>
 
     <?php if ($error): ?><p class="error-text"><?= htmlspecialchars($error) ?></p><?php endif; ?>
 
-    <form method="POST" action="forgot-password.php">
+    <form method="POST" action="forgot-password.php" id="fpForm">
       <div class="form-row">
         <label>Email</label>
-        <input type="email" name="email" placeholder="you@geogene.gov.ph" required value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+        <input type="email" name="email" placeholder="you@geogene.gov.ph" required maxlength="150" autocomplete="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
       </div>
-      <button type="submit" class="login-btn" style="border:1px solid rgba(255,255,255,0.35);">Send Reset Code</button>
+      <button type="submit" class="login-btn" id="fpBtn" style="border:1px solid rgba(255,255,255,0.35);">Send Reset Code</button>
     </form>
 
     <p class="footer-text">Remembered your password? <a href="login.php">Back to Login</a></p>
@@ -167,5 +140,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php endif; ?>
 </div>
 
+<script>
+// Loading state: stops double-clicks and shows that something is happening.
+var fpForm = document.getElementById('fpForm');
+if (fpForm) {
+  fpForm.addEventListener('submit', function () {
+    var b = document.getElementById('fpBtn');
+    b.disabled = true;
+    b.textContent = 'Sending code...';
+  });
+}
+</script>
 </body>
 </html>
