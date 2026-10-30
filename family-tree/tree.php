@@ -12,6 +12,41 @@ header('Pragma: no-cache');
 $userId = $_SESSION['user_id'];
 $activeNav = 'tree';
 
+/**
+ * Navigation: clicking a relative's card (Father, Mother, a grandparent, a
+ * sibling, a spouse, a child...) re-centers the WHOLE tree on THAT person,
+ * exactly like the staff tool - and the Back arrow has to be able to walk
+ * all the way back out through however many of those clicks were made,
+ * ending on the signed-in user's OWN tree (never a blank page).
+ *
+ * This is done with two plain query-string params, carried on every
+ * clickable node's link and on the Back link:
+ *   record_id - whose tree is currently being shown (absent = "home",
+ *               the signed-in user's own tree)
+ *   path      - a comma-separated stack of the record_ids visited BEFORE
+ *               this one, oldest first - so Back always knows exactly
+ *               which tree to return to, however many hops deep we are.
+ * Everything is driven by the URL (no client-side state to lose track of),
+ * so repeated clicks and a full page reload both behave the same way.
+ */
+function ft_parse_path(?string $raw): array
+{
+    if (!$raw) return [];
+    $ids = [];
+    foreach (explode(',', $raw) as $part) {
+        $part = trim($part);
+        if ($part !== '' && ctype_digit($part)) $ids[] = (int) $part;
+    }
+    return $ids;
+}
+function ft_path_str(array $ids): string
+{
+    return implode(',', array_map('intval', $ids));
+}
+
+$navPath = ft_parse_path($_GET['path'] ?? null);
+$viewRecordId = isset($_GET['record_id']) && ctype_digit((string) $_GET['record_id']) ? (int) $_GET['record_id'] : null;
+
 // Matching ignores CASE and ORDER: "Abao, Xander Sarzosa" (older records),
 // "XANDER SARZOSA ABAO" and "Xander Sarzosa Abao" are the same person.
 function ft_normalize(string $s): string
@@ -31,21 +66,53 @@ $stmt = $pdo->prepare("SELECT matched_record_id, full_name, identity_verified FR
 $stmt->execute([$userId]);
 $account = $stmt->fetch();
 
-$selfRecord = null;
+// $ownRecord is the signed-in user's OWN identity - this never changes no
+// matter whose tree is currently being displayed, and stays the fixed
+// "Home" to return all the way to. $selfRecord is whichever person the
+// tree is CENTERED on right now: $ownRecord by default, or a relative
+// clicked through to via $viewRecordId.
+$ownRecord = null;
 if ($account) {
     if (!empty($account['matched_record_id'])) {
         $stmt = $pdo->prepare("SELECT * FROM civil_registry_records WHERE record_id = ?");
         $stmt->execute([$account['matched_record_id']]);
-        $selfRecord = $stmt->fetch() ?: null;
+        $ownRecord = $stmt->fetch() ?: null;
     }
-    if (!$selfRecord && !empty($account['identity_verified']) && !empty($account['full_name'])) {
+    if (!$ownRecord && !empty($account['identity_verified']) && !empty($account['full_name'])) {
         $wanted = ft_normalize($account['full_name']);
         $all = $pdo->query("SELECT * FROM civil_registry_records")->fetchAll();
         foreach ($all as $r) {
-            if (ft_normalize(ft_full_name($r)) === $wanted) { $selfRecord = $r; break; }
+            if (ft_normalize(ft_full_name($r)) === $wanted) { $ownRecord = $r; break; }
         }
     }
 }
+
+$selfRecord = $ownRecord;
+if ($viewRecordId !== null && $ownRecord && $viewRecordId !== (int) $ownRecord['record_id']) {
+    $stmt = $pdo->prepare("SELECT * FROM civil_registry_records WHERE record_id = ?");
+    $stmt->execute([$viewRecordId]);
+    $viewedRecord = $stmt->fetch() ?: null;
+    if ($viewedRecord) {
+        $selfRecord = $viewedRecord;
+    } else {
+        // A stale/invalid record_id in the URL (deleted record, tampered
+        // link...) - fall back to "home" instead of showing a blank page.
+        // $navPath is cleared too, so Back (if it were still shown) can't
+        // walk through a chain that no longer makes sense - but since this
+        // now resolves to the owner's own tree, $isOwnTree below makes the
+        // Back arrow disappear anyway, which is the correct end state.
+        $viewRecordId = null;
+        $navPath = [];
+    }
+}
+
+// The single source of truth for the Back arrow: it shows precisely when
+// the tree on screen is NOT the signed-in user's own ("Home") tree -
+// never based on raw URL params alone, so navigating back (or straight to
+// a bare tree.php) always hides it again, and a stale record_id that
+// quietly falls back to "home" above hides it too.
+$isOwnTree = $ownRecord && $selfRecord && (int) $ownRecord['record_id'] === (int) $selfRecord['record_id'];
+$showBackArrow = $ownRecord && !$isOwnTree;
 
 $tree = null;
 
@@ -156,6 +223,40 @@ if ($selfRecord) {
     ];
 }
 
+/**
+ * The link for a clickable relative's card: null when that card shouldn't
+ * be clickable at all (no real record behind it, or it's the person the
+ * tree is already centered on). Otherwise carries the current person
+ * forward onto the back-stack ($navPath) so Back can return to exactly
+ * this tree afterward.
+ */
+function ft_relative_href($record): ?string
+{
+    global $selfRecord, $navPath;
+    if (!$record || empty($record['record_id']) || !empty($record['virtual'])) return null;
+    $targetId = (int) $record['record_id'];
+    if ($selfRecord && (int) $selfRecord['record_id'] === $targetId) return null;
+
+    $newPath = $navPath;
+    if ($selfRecord) $newPath[] = (int) $selfRecord['record_id'];
+
+    $href = 'tree.php?record_id=' . $targetId;
+    if ($newPath) $href .= '&path=' . urlencode(ft_path_str($newPath));
+    return $href;
+}
+
+/** Pops the most recent stop off the back-stack - "home" once it's empty. */
+function ft_back_href(): string
+{
+    global $navPath;
+    if (!$navPath) return 'tree.php';
+    $path = $navPath;
+    $prevId = array_pop($path);
+    $href = 'tree.php?record_id=' . $prevId;
+    if ($path) $href .= '&path=' . urlencode(ft_path_str($path));
+    return $href;
+}
+
 function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
     static $seq = 0;
     $seq++;
@@ -184,11 +285,23 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
     }
 
     $cls = $isSelf ? 'tree-node self' : 'tree-node';
-    echo '<div class="' . $cls . '" data-gen="' . $gen . '" data-rel="' . $rel . '" data-ft-node="' . $id . '">
-            <div class="tree-avatar">' . $initial . '</div>
+    $inner = '<div class="tree-avatar">' . $initial . '</div>
             <div class="tree-name">' . htmlspecialchars($name) . '</div>' .
-            ($role ? '<div class="tree-role">' . htmlspecialchars($role) . '</div>' : '') .
-          '</div>';
+            ($role ? '<div class="tree-role">' . htmlspecialchars($role) . '</div>' : '');
+
+    $href = ft_relative_href($record);
+    if ($href) {
+        // A real relative with their own Civil Registry record - clicking
+        // re-centers the whole tree on THEM, carrying the current person
+        // onto the back-stack first (see ft_relative_href()).
+        echo '<a class="' . $cls . ' clickable" href="' . htmlspecialchars($href) . '" data-gen="' . $gen . '" data-rel="' . $rel . '" data-ft-node="' . $id . '" title="View ' . htmlspecialchars($name) . '\'s family tree">
+                ' . $inner . '
+              </a>';
+    } else {
+        echo '<div class="' . $cls . '" data-gen="' . $gen . '" data-rel="' . $rel . '" data-ft-node="' . $id . '">
+                ' . $inner . '
+              </div>';
+    }
     return $id;
 }
 ?>
@@ -231,12 +344,30 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
   .tree-role{font-size:8.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.02em;}
   .tree-node.unmapped .tree-avatar{background:var(--bg-page);border-color:var(--border);color:var(--text-muted);}
   .tree-node.unmapped .tree-name{color:var(--text-muted);}
+  a.tree-node{text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+  a.tree-node.clickable .tree-avatar{transition:transform .12s ease, box-shadow .12s ease;}
+  a.tree-node.clickable:hover .tree-avatar,
+  a.tree-node.clickable:active .tree-avatar{transform:translateY(-2px);box-shadow:0 3px 10px rgba(0,0,0,0.22);}
+
+  .back-arrow-btn{
+    display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:50%;
+    background:var(--blue-lighter);color:var(--text-main);
+    flex-shrink:0;
+  }
 
   .tree-connectors{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0;}
 
   #treeWrap{
     background:var(--blue-light);border:1px solid var(--border);border-radius:20px;
     padding:20px 16px;box-shadow: 0 4px 5px rgba(0,0,0,0.14), 0 6px 10px rgba(0,0,0,0.12);
+    /* Large trees (several generations, many siblings/aunts/uncles) can
+       grow wider AND taller than the screen - this box scrolls on BOTH
+       axes on its own, independent of the page, so the zoom controls and
+       bottom nav stay anchored in place while staff pan around the tree. */
+    overflow:auto;
+    max-height:calc(100dvh - 230px);
+    -webkit-overflow-scrolling:touch;
   }
 
   .zoom-bar {
@@ -289,7 +420,22 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
 
 <div class="phone">
   <div class="content-scroll">
-    <div class="app-header"><span>Family Tree</span><span class="filter-icon" onclick="openFilterModal()">⚙</span></div>
+    <div class="app-header">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <?php if ($showBackArrow): ?>
+          <a class="back-arrow-btn" href="<?= htmlspecialchars(ft_back_href()) ?>" title="Back">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+          </a>
+        <?php endif; ?>
+        <span>Family Tree</span>
+      </span>
+      <span class="filter-icon" onclick="openFilterModal()">⚙</span>
+    </div>
+    <?php if ($tree && !$isOwnTree): ?>
+      <p style="font-size:11.5px;color:var(--text-muted);margin:-6px 0 10px;text-align:center;">
+        Viewing <?= htmlspecialchars(ft_full_name($tree['self'])) ?>'s family tree
+      </p>
+    <?php endif; ?>
 
     <?php if (!$tree): ?>
       <div class="empty-state">
@@ -299,7 +445,7 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
       </div>
     <?php else: ?>
 
-      <div id="treeWrap" style="overflow-x:auto;position:relative;">
+      <div id="treeWrap" style="position:relative;">
         <svg class="tree-connectors"></svg>
         <div class="tree-diagram">
 
@@ -320,7 +466,7 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
             <?php foreach ($tree['siblings'] as $sib): ?>
               <?php $idSibs[] = ftNode($sib, 'Sibling', false, 1, 'siblings'); ?>
             <?php endforeach; ?>
-            <?php $idSelf = ftNode($tree['self'], '', true, 1, 'self'); ?>
+            <?php $idSelf = ftNode($tree['self'], $isOwnTree ? 'You' : '', true, 1, 'self'); ?>
             <?php foreach ($tree['allSpouses'] as $m): ?>
               <span class="plus" style="align-self:center;">+</span>
               <?php $spId = ftNode($m['record'], $m['role'], false, 1, 'spouse'); ?>

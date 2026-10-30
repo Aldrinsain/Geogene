@@ -11,14 +11,14 @@
  * nga DISABLED aron wala'y account nga makalusot.
  */
 
-if (!defined('GEOGENE_DB_DISABLED'))        define('GEOGENE_DB_DISABLED', 'suspended');
+if (!defined('GEOGENE_DB_DISABLED'))        define('GEOGENE_DB_DISABLED', 'disable');
 if (!defined('GEOGENE_DISABLED_MESSAGE'))   define('GEOGENE_DISABLED_MESSAGE', 'This account has been disabled. Please contact the administrator.');
 
 /** TRUE kung ang account dili na tugotan nga mo-login. */
 function geogene_account_is_disabled($status): bool
 {
     $s = strtolower(trim((string) $status));
-    return in_array($s, ['suspended', 'disabled', 'disable', ''], true);
+    return in_array($s, ['disable', 'disabled', 'disable', ''], true);
 }
 
 /**
