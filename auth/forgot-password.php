@@ -1,43 +1,21 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/password-reset.php';   // loads db.php + mail.php too
 
 $error = '';
 $sent = false;
+$devCode = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
+    $result = gg_pr_request_code($pdo, (string) ($_POST['email'] ?? ''));
 
-    if ($email === '') {
-        $error = 'Please enter your email address.';
-    } else {
-        $stmt = $pdo->prepare("SELECT user_id, full_name FROM users WHERE email = ?");
-        $stmt->execute([$email]);
-        $user = $stmt->fetch();
-
-        if ($user) {
-            $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-            $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
-
-            $pdo->prepare("INSERT INTO otp_codes (user_id, otp_code, purpose, expires_at) VALUES (?, ?, 'password_reset', ?)")
-                ->execute([$user['user_id'], $otp, $expiresAt]);
-
-            require_once __DIR__ . '/../config/mail.php';
-            $emailSent = send_password_reset_email($email, $user['full_name'], $otp);
-
-            $_SESSION['reset_user_id'] = $user['user_id'];
-            $_SESSION['reset_email'] = $email;
-
-            if (!$emailSent) {
-                if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
-            } else {
-                unset($_SESSION['dev_otp_preview']);
-            }
-        }
-
-        // Same "sent" state whether or not the email was found, so this
-        // form can't be used to check which emails have accounts.
+    if ($result['status'] === 'sent' || $result['status'] === 'unknown') {
+        // "unknown" looks identical to "sent" on purpose, so this form can't be
+        // used to check which emails have an account.
         $sent = true;
+        $devCode = $result['dev_code'] ?? null;
+    } else {
+        $error = $result['message'];
     }
 }
 ?>
@@ -74,22 +52,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <p class="error-text" style="text-align:center;"><?= htmlspecialchars($error) ?></p>
     <?php endif; ?>
 
-    <form method="POST" action="forgot-password.php">
+    <form method="POST" action="forgot-password.php" id="fpForm">
       <label>Email Address</label>
-      <input type="email" name="email" class="form-input" placeholder="Enter your email" required value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
-      <button type="submit" class="btn-primary" style="margin-top:18px;">Send Reset Code</button>
+      <input type="email" name="email" class="form-input" placeholder="Enter your email" required maxlength="150" autocomplete="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+      <button type="submit" class="btn-primary" id="fpBtn" style="margin-top:18px;">Send Reset Code</button>
     </form>
 
     <p class="footer-text">Remembered your password? <a href="login.php">Back to Login</a></p>
   <?php else: ?>
     <div class="icon-circle green">✉</div>
     <h1 class="title">Check Your Email</h1>
-    <p class="subtitle">If that email has an account, we've sent a 6-digit reset code to it.</p>
+    <p class="subtitle">If that email has an account, we've sent a 6-digit reset code to it. The code expires in 10 minutes. Don't forget to check your spam folder.</p>
+    <p class="success-text" style="text-align:center;margin-bottom:16px;">&#10004; Reset code sent. Check your inbox.</p>
 
-    <?php if (!empty($_SESSION['dev_otp_preview'])): ?>
+    <?php if (!empty($devCode)): ?>
       <div style="background:#fff8e1;border:1px solid #f0c95a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:#7a5c00;text-align:center;">
         ⚠ <strong>DEV MODE</strong> — SMTP email is not set up yet.<br>
-        Your reset code: <strong style="font-size:16px;letter-spacing:3px;"><?= htmlspecialchars($_SESSION['dev_otp_preview']) ?></strong>
+        Your reset code: <strong style="font-size:16px;letter-spacing:3px;"><?= htmlspecialchars($devCode) ?></strong>
       </div>
     <?php endif; ?>
 
@@ -98,5 +77,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php endif; ?>
 </div>
 
+<script>
+// Loading state: stops double-clicks and shows that something is happening.
+var fpForm = document.getElementById('fpForm');
+if (fpForm) {
+  fpForm.addEventListener('submit', function () {
+    var b = document.getElementById('fpBtn');
+    b.disabled = true;
+    b.textContent = 'Sending code...';
+  });
+}
+</script>
 </body>
 </html>

@@ -61,14 +61,19 @@ if (!function_exists('geogene_env')) {
     }
 
     $GLOBALS['GEOGENE_ENV'] = [];
+    // Use .env; if it is missing, accept .env.production (so forgetting to rename it on the server
+    // no longer silently drops the DB + SMTP settings and breaks every email).
     $geoEnvFile = dirname(__DIR__) . '/.env';
+    if (!is_file($geoEnvFile) && is_file(dirname(__DIR__) . '/.env.production')) {
+        $geoEnvFile = dirname(__DIR__) . '/.env.production';
+    }
 
     if (is_file($geoEnvFile) && is_readable($geoEnvFile)) {
         $GLOBALS['GEOGENE_ENV'] = geogene_env_parse((string) file_get_contents($geoEnvFile));
         $geoEnvKeys = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS',
                        'SMTP_USER', 'SMTP_PASS',
                        'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
-                       'ID_VERIFY_PEPPER', 'GEOGENE_PRODUCTION'];
+                       'ID_VERIFY_PEPPER'];   // GEOGENE_PRODUCTION is parsed to a real true/false below (the text "false" would be truthy)
         foreach ($geoEnvKeys as $geoKey) {
             if (array_key_exists($geoKey, $GLOBALS['GEOGENE_ENV']) && !defined($geoKey)) {
                 define($geoKey, $GLOBALS['GEOGENE_ENV'][$geoKey]);
