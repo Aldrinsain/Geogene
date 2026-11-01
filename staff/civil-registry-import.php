@@ -101,7 +101,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="panel" style="max-width:760px;">
     <div class="panel-header">
       <span class="panel-title">Upload File</span>
-      <a href="civil-registry-template.php" class="btn btn-outline btn-sm">⬇ Download Template</a>
+      
     </div>
 
     <div class="upload-info-banner">

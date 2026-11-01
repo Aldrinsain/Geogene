@@ -80,9 +80,9 @@ $recordId = (int) ($_GET['id'] ?? 0);
 $validTypes = ['birth', 'marriage', 'death'];
 
 $record = [
-    'registry_type' => 'birth', 'registry_number' => '', 'page_no' => '', 'barangay' => '',
-    'date_prepared' => '', 'first_name' => '', 'middle_name' => '', 'last_name' => '',
-    'sex' => 'male', 'civil_status' => '', 'date_of_event' => '', 'date_of_birth' => '',
+    'registry_type' => 'birth', 'registry_number' => '', 'barangay' => '',
+    'first_name' => '', 'middle_name' => '', 'last_name' => '',
+    'sex' => 'male', 'civil_status'  => '', 'date_of_birth' => '',
     'father_name' => '', 'mother_name' => '', 'spouse_name' => '',
     'wife_father_name' => '', 'wife_mother_name' => '',
     'age_at_death' => '', 'place_of_event' => '', 'cause_of_death' => '',
@@ -190,12 +190,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $suffix = $isEdit ? ($record['suffix'] ?? null) : null;
         $remarks = $isEdit ? ($record['remarks'] ?? null) : null;
         $zone = $isEdit ? ($record['zone'] ?? null) : null;
-        // Page No. / Date Prepared are no longer on the form - an edit keeps what is already stored.
-        $pageNoKeep   = $isEdit ? ($record['page_no'] ?? null) : null;
-        $datePrepKeep = $isEdit ? ($record['date_prepared'] ?? null) : null;
+      
+        
 
         $data = [
-            $type, $registryNumber ?: null, $bookNo, $pageNoKeep, $cityMunicipality, $datePrepKeep,
+            $type, $registryNumber ?: null, $barangay, $datePrepKeep,
             $fullName ?: null, $firstName, $middleName ?: null, $lastName, $suffix,
             $sex, $civilStatus, $dateOfEvent, $dateOfBirth, $placeOfEvent,
             $fatherName, $motherName, $spouseName, $wifeFatherName, $wifeMotherName,
@@ -284,37 +283,26 @@ require_once __DIR__ . '/includes/staff-header.php';
   <form method="POST" autocomplete="off">
     <?php
       $scanFrontExisting  = $record['scan_image_path'] ?? '';
-      $scanFront2Existing = $record['scan_image_path_2'] ?? '';
-      $scanBackExisting   = $record['scan_image_path_back'] ?? '';
-      $scanBack2Existing  = $record['scan_image_path_back_2'] ?? '';
+
       $certDataExisting   = $record['certificate_data'] ?? '';
     ?>
     <div class="panel" style="background:var(--bg-page);border:1px solid var(--border);border-radius:9px;padding:14px;margin-bottom:16px;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
-        <div style="font-weight:700;margin-bottom:2px;">📄 Certificate Scan (optional)</div>
-        <?php if (!$isEdit): ?>
-        <a href="civil-registry-bulk-scan.php" class="btn btn-outline btn-sm" style="white-space:nowrap;">📷 Scan multiple certificates at once →</a>
-        <?php endif; ?>
-      </div>
+        <div style="font-weight:700;margin-bottom:2px;">📄 Certificate</div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
-        Upload the Front and/or Back photo of the certificate, then click SCAN - the fields below are filled in automatically from the text that was read (OCR). You can still edit them manually after scanning.
+        Upload the photo of the certificate, then click SCAN - the fields below are filled in automatically from the text that was read (OCR). You can still edit them manually after scanning.
+      </div>
       </div>
 
-      <label style="display:flex;align-items:flex-start;gap:8px;font-weight:600;cursor:pointer;background:#fff6da;border:1px solid #e8d385;border-radius:8px;padding:8px 10px;margin-bottom:12px;">
-        <input type="checkbox" id="oldCertificateMode" style="margin-top:3px;">
-        <span style="font-size:12.5px;">
-          🕰️ Old Certificate Mode
-          <div style="font-weight:400;color:var(--text-muted);">Check this if the certificate is old/faded/blurred - slower, but the reading is more ACCURATE.</div>
-        </span>
-      </label>
+
 
       <div class="form-grid-2">
         <div style="border:1px solid var(--border);border-radius:8px;padding:10px;">
-          <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">FRONT</div>
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">Upload the photo of the certificate</div>
           <input type="file" id="scanFile-front-1" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:4px;">
           <input type="file" id="scanFile-front-2" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:8px;">
-          <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;">1st photo required, 2nd optional (clearer retake)</div>
-          <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('front', this)">📷 SCAN FRONT</button>
+          <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;"></div>
+          <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('front', this)">📷 SCAN</button>
           <div id="scanPreview-front" style="margin-top:8px;"><?php if ($scanFrontExisting): ?><img src="<?= htmlspecialchars(gg_scan_url($scanFrontExisting)) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
           <div id="scanStatus-front" style="font-size:11.5px;margin-top:6px;min-height:14px;"></div>
           <details id="scanRawWrap-front" style="display:none;margin-top:6px;">
@@ -322,20 +310,6 @@ require_once __DIR__ . '/includes/staff-header.php';
             <pre id="scanRawText-front" style="white-space:pre-wrap;font-size:10.5px;background:var(--bg-page);border:1px solid var(--border);border-radius:6px;padding:6px;max-height:180px;overflow:auto;margin-top:4px;"></pre>
           </details>
         </div>
-        <div style="border:1px solid var(--border);border-radius:8px;padding:10px;">
-          <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">BACK <span style="font-weight:400;color:var(--text-muted);">(optional)</span></div>
-          <input type="file" id="scanFile-back-1" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:4px;">
-          <input type="file" id="scanFile-back-2" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:8px;">
-          <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;">1st photo required, 2nd optional (clearer retake)</div>
-          <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('back', this)">📷 SCAN BACK</button>
-          <div id="scanPreview-back" style="margin-top:8px;"><?php if ($scanBackExisting): ?><img src="<?= htmlspecialchars(gg_scan_url($scanBackExisting)) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
-          <div id="scanStatus-back" style="font-size:11.5px;margin-top:6px;min-height:14px;"></div>
-          <details id="scanRawWrap-back" style="display:none;margin-top:6px;">
-            <summary style="font-size:11px;cursor:pointer;color:var(--text-muted);">🔍 View the raw OCR text</summary>
-            <pre id="scanRawText-back" style="white-space:pre-wrap;font-size:10.5px;background:var(--bg-page);border:1px solid var(--border);border-radius:6px;padding:6px;max-height:180px;overflow:auto;margin-top:4px;"></pre>
-          </details>
-        </div>
-      </div>
 
       <?php foreach ([
           'scan_image_path' => $scanFrontExisting, 'scan_image_path_2' => $scanFront2Existing,
@@ -365,7 +339,7 @@ require_once __DIR__ . '/includes/staff-header.php';
 
     <!-- ============== BIRTH fields ============== -->
     <div id="fields-birth">
-      <div class="form-row"><label>Name of Child *</label><input type="text" name="person_name" autocomplete="off" value="<?= htmlspecialchars($type === 'birth' ? $personNameDisplay : '') ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
+      <div class="form-row"><label>Name of Child *</label><input type="text" name="person_name" autocomplete="off" value="<?= htmlspecialchars($type === 'birth' ? $personNameDisplay : '') ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
       <div class="form-row">
         <label>Date of Birth</label>
         <div class="date-mask-wrap">
@@ -383,8 +357,8 @@ require_once __DIR__ . '/includes/staff-header.php';
     <!-- ============== MARRIAGE fields ============== -->
     <div id="fields-marriage">
       <div class="form-grid-2">
-        <div class="form-row"><label>Name of Husband *</label><input type="text" name="person_name" autocomplete="off" value="<?= htmlspecialchars($type === 'marriage' ? $personNameDisplay : '') ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
-        <div class="form-row"><label>Name of Wife</label><input type="text" name="spouse_name" autocomplete="off" value="<?= htmlspecialchars($spouseNameDisplay) ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
+        <div class="form-row"><label>Name of Husband *</label><input type="text" name="person_name" autocomplete="off" value="<?= htmlspecialchars($type === 'marriage' ? $personNameDisplay : '') ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
+        <div class="form-row"><label>Name of Wife</label><input type="text" name="spouse_name" autocomplete="off" value="<?= htmlspecialchars($spouseNameDisplay) ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
       </div>
       <div class="form-row">
         <label>Date of Marriage</label>
@@ -395,12 +369,12 @@ require_once __DIR__ . '/includes/staff-header.php';
         </div>
       </div>
       <div class="form-grid-2">
-        <div class="form-row"><label>Name of Mother (H)</label><input type="text" name="mother_name" autocomplete="off" value="<?= htmlspecialchars($type === 'marriage' ? gg_display_name($record['mother_name'] ?? '') : '') ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
-        <div class="form-row"><label>Name of Father (H)</label><input type="text" name="father_name" autocomplete="off" value="<?= htmlspecialchars($type === 'marriage' ? gg_display_name($record['father_name'] ?? '') : '') ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
+        <div class="form-row"><label>Name of Mother (H)</label><input type="text" name="mother_name" autocomplete="off" value="<?= htmlspecialchars($type === 'marriage' ? gg_display_name($record['mother_name'] ?? '') : '') ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
+        <div class="form-row"><label>Name of Father (H)</label><input type="text" name="father_name" autocomplete="off" value="<?= htmlspecialchars($type === 'marriage' ? gg_display_name($record['father_name'] ?? '') : '') ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
       </div>
       <div class="form-grid-2">
-        <div class="form-row"><label>Name of Mother (W)</label><input type="text" name="wife_mother_name" autocomplete="off" value="<?= htmlspecialchars(gg_display_name($record['wife_mother_name'] ?? '')) ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
-        <div class="form-row"><label>Name of Father (W)</label><input type="text" name="wife_father_name" autocomplete="off" value="<?= htmlspecialchars(gg_display_name($record['wife_father_name'] ?? '')) ?>" placeholder="Given Middle Surname (e.g. Aldrin Piloton Sain)"></div>
+        <div class="form-row"><label>Name of Mother (W)</label><input type="text" name="wife_mother_name" autocomplete="off" value="<?= htmlspecialchars(gg_display_name($record['wife_mother_name'] ?? '')) ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
+        <div class="form-row"><label>Name of Father (W)</label><input type="text" name="wife_father_name" autocomplete="off" value="<?= htmlspecialchars(gg_display_name($record['wife_father_name'] ?? '')) ?>" placeholder="Given Middle Surname (e.g. Given Middle Surname)"></div>
       </div>
     </div>
 
