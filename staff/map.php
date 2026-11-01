@@ -241,12 +241,7 @@ require_once __DIR__ . '/includes/staff-header.php';
     <span class="fc-label">Family Records<br>on Map<small id="familyCountSub">Search a name</small></span>
   </div>
   </div>
-
-  <div class="map-legend">
-    <div class="lg-item"><span class="lg-dot" style="background:#1b6e3c;"></span> Birth Record</div>
-    <div class="lg-item"><span class="lg-dot" style="background:#3a8ee0;"></span> Marriage Record</div>
-    <div class="lg-item"><span class="lg-dot" style="background:#8a8a8a;"></span> Death Record</div>
-  </div>
+  
 
   <div id="staffMap"></div>
 
