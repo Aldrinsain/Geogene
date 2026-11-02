@@ -10,9 +10,9 @@ require_once __DIR__ . '/session-names.php';
 require_once __DIR__ . '/env.php';          // gibasa ang .env
 
 $DB_HOST = defined('DB_HOST') ? DB_HOST : 'localhost';
-$DB_NAME = defined('DB_NAME') ? DB_NAME : 'geogene_db';
-$DB_USER = defined('DB_USER') ? DB_USER : 'root';
-$DB_PASS = defined('DB_PASS') ? DB_PASS : '';   // default XAMPP root password is empty
+$DB_NAME = defined('DB_NAME') ? DB_NAME : 'u442411629_geogene_db';
+$DB_USER = defined('DB_USER') ? DB_USER : 'u442411629_geogene_dev';
+$DB_PASS = defined('DB_PASS') ? DB_PASS : '=4bN^G98DL2b ';   // default XAMPP root password is empty
 
 try {
     $pdo = new PDO(
