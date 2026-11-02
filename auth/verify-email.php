@@ -12,26 +12,50 @@ $email  = $_SESSION['pending_email'] ?? '';
 $error  = '';
 $success = false;
 
+// The registration step could not email the code (SMTP problem): say so instead of
+// leaving the person waiting for an email that will never arrive.
+if (!empty($_SESSION['otp_mail_failed'])) {
+    unset($_SESSION['otp_mail_failed']);
+    $error = 'We could not send the code to your email right now. Tap "Resend Code" to try again.';
+}
+
 // ---------- RESEND OTP ----------
 if (isset($_GET['resend'])) {
-    $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-    $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
-
-    $stmt = $pdo->prepare("INSERT INTO otp_codes (user_id, otp_code, purpose, expires_at) VALUES (?, ?, 'email_verification', ?)");
-    $stmt->execute([$userId, $otp, $expiresAt]);
-
-    require_once __DIR__ . '/../config/mail.php';
-    $stmtName = $pdo->prepare("SELECT full_name FROM users WHERE user_id = ?");
-    $stmtName->execute([$userId]);
-    $name = $stmtName->fetchColumn();
-    $emailSent = send_otp_email($email, $name, $otp);
-
-    if (!$emailSent) {
-        if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
-        $error = 'A new code has been sent. (Dev mode: shown below because SMTP is not set up yet.)';
+    $wait = 60 - (time() - (int) ($_SESSION['otp_last_sent'] ?? 0));
+    if ($wait > 0) {
+        $error = "Please wait $wait seconds before requesting another code.";
     } else {
-        unset($_SESSION['dev_otp_preview']);
-        $error = 'A new code has been sent to your email.';
+        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+
+        // Only the newest code works: older unused codes are cancelled.
+        $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE user_id = ? AND purpose = 'email_verification' AND is_used = 0")
+            ->execute([$userId]);
+        $stmt = $pdo->prepare("INSERT INTO otp_codes (user_id, otp_code, purpose, expires_at) VALUES (?, ?, 'email_verification', ?)");
+        $stmt->execute([$userId, $otp, $expiresAt]);
+        $newOtpId = (int) $pdo->lastInsertId();
+
+        require_once __DIR__ . '/../config/mail.php';
+        $stmtName = $pdo->prepare("SELECT full_name FROM users WHERE user_id = ?");
+        $stmtName->execute([$userId]);
+        $name = $stmtName->fetchColumn();
+        $emailSent = send_otp_email($email, $name, $otp);
+
+        $_SESSION['otp_wrong'] = 0;
+        if ($emailSent) {
+            $_SESSION['otp_last_sent'] = time();
+            unset($_SESSION['dev_otp_preview']);
+            $error = 'A new code has been sent to your email.';
+        } elseif (GEOGENE_SHOW_DEV_OTP) {
+            $_SESSION['otp_last_sent'] = time();
+            $_SESSION['dev_otp_preview'] = $otp;
+            $error = 'A new code has been sent. (Dev mode: shown below because SMTP is not set up yet.)';
+        } else {
+            // Production and the email failed: do not pretend it was sent, and let them retry right away.
+            $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE otp_id = ?")->execute([$newOtpId]);
+            $_SESSION['otp_last_sent'] = 0;
+            $error = 'We could not send the email right now. Please try again in a moment.';
+        }
     }
 }
 
@@ -41,6 +65,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (strlen($enteredOtp) !== 6) {
         $error = 'Please enter the complete 6-digit code.';
+    } elseif ((int) ($_SESSION['otp_wrong'] ?? 0) >= 5) {
+        // Too many wrong guesses on this code: it can't be guessed any further.
+        $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE user_id = ? AND purpose = 'email_verification' AND is_used = 0")
+            ->execute([$userId]);
+        $error = 'Too many wrong attempts. Tap "Resend Code" to get a new code.';
     } else {
         $stmt = $pdo->prepare("
             SELECT * FROM otp_codes
@@ -52,8 +81,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $otpRow = $stmt->fetch();
 
         if (!$otpRow) {
+            $_SESSION['otp_wrong'] = (int) ($_SESSION['otp_wrong'] ?? 0) + 1;
             $error = 'The code is incorrect or has expired. Please try again.';
         } else {
+            unset($_SESSION['otp_wrong'], $_SESSION['otp_last_sent']);
             $pdo->prepare("UPDATE otp_codes SET is_used = 1 WHERE otp_id = ?")->execute([$otpRow['otp_id']]);
             $pdo->prepare("UPDATE users SET email_verified = 1, status = 'active' WHERE user_id = ?")->execute([$userId]);
 
@@ -72,6 +103,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("INSERT INTO login_logs (user_id, ip_address, user_agent) VALUES (?, ?, ?)")
                 ->execute([$user['user_id'], $_SERVER['REMOTE_ADDR'] ?? '', $_SERVER['HTTP_USER_AGENT'] ?? '']);
 
+            // Next time this device opens the app it goes straight to Login (skips the intro)
+            if (is_file(__DIR__ . '/../includes/returning-device.php')) {
+                require_once __DIR__ . '/../includes/returning-device.php';
+                gg_mark_returning_device();
+            }
             $success = true;
         }
     }

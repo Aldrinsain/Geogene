@@ -5,6 +5,7 @@
 // the same browser, without either login affecting the other.
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/account-status.php';
+require_once __DIR__ . '/../config/google-oauth.php';
 
 session_name(GEOGENE_ADMIN_SESSION_NAME);
 session_start();
@@ -235,7 +236,22 @@ body::after{
   body.has-alert .brand{
     filter:grayscale(0.6) brightness(0.85);
   }
+  .divider{display:flex;align-items:center;gap:10px;margin:16px 0 14px;}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:rgba(255,255,255,0.35);}
+  .divider span{font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);letter-spacing:.5px;}
+  .google-btn{
+    width:100%;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    background:rgba(255,255,255,0.9);
+    color:#2b2b2b;border:1px solid rgba(255,255,255,0.6);
+    border-radius:9px;padding:11px;
+    font-size:13.5px;font-weight:600;cursor:pointer;
+    transition:background .2s ease;
+  }
+  .google-btn:hover{background:#fff;}
+  .google-btn svg{width:17px;height:17px;}
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body<?= $error ? ' class="has-alert"' : '' ?>>
 
@@ -271,6 +287,18 @@ body::after{
     </p>
     <button type="submit" class="login-btn">Login</button>
   </form>
+
+  <div class="divider"><span>OR</span></div>
+
+  <button type="button" class="google-btn" id="googleSignIn">
+    <svg viewBox="0 0 48 48">
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
+      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+      <path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.6C29.6 35.4 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.6 5.1C9.6 39.6 16.2 44 24 44z"/>
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.6 5.6C41.4 36 44 30.5 44 24c0-1.3-.1-2.7-.4-3.5z"/>
+    </svg>
+    Sign in with Google
+  </button>
 
   <p style="text-align:center;margin-top:16px;">
     <a href="../login.php" style="font-size:12px;color:rgba(255,255,255,0.85);text-decoration:none;">Are you Civil Registry Staff? Login here &rarr;</a>
@@ -310,6 +338,71 @@ body::after{
     eyeIcon.innerHTML = isHidden ? eyeClosed : eyeOpen;
     toggleBtn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
   });
+
+  /* ---------- Sign in with Google (Admin) ---------- */
+  function showGoogleError(message) {
+    let box = document.getElementById('googleErrorMsg');
+    if (!box) {
+      box = document.createElement('p');
+      box.id = 'googleErrorMsg';
+      box.style.cssText = 'color:#ffd6d6;font-size:11.5px;text-align:center;margin-top:10px;';
+      document.getElementById('googleSignIn').insertAdjacentElement('afterend', box);
+    }
+    box.textContent = message;
+  }
+
+  const googleClientId = <?= json_encode(GOOGLE_CLIENT_ID) ?>;
+  const googleBtn = document.getElementById('googleSignIn');
+
+  if (!googleClientId || googleClientId.indexOf('PASTE-YOUR-CLIENT-ID') !== -1) {
+    googleBtn.addEventListener('click', () => {
+      showGoogleError('Google Sign-In is not set up yet. Please log in with your email and password.');
+    });
+  } else {
+    window.addEventListener('load', () => {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+        googleBtn.addEventListener('click', () => {
+          showGoogleError('Could not load Google Sign-In. Check your internet connection and reload.');
+        });
+        return;
+      }
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: googleClientId,
+        scope: 'openid email profile',
+        callback: (tokenResponse) => {
+          if (!tokenResponse || !tokenResponse.access_token) {
+            showGoogleError('Google sign-in was cancelled or failed. Please try again.');
+            return;
+          }
+          googleBtn.disabled = true;
+          const originalHtml = googleBtn.innerHTML;
+          googleBtn.innerHTML = 'Signing in...';
+
+          fetch('google-login.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: tokenResponse.access_token }),
+          })
+            .then(res => res.json())
+            .then(data => {
+              if (data.success) {
+                window.location.href = data.redirect || 'dashboard.php';
+              } else {
+                showGoogleError(data.message || 'Sign-in failed. Please try again.');
+                googleBtn.disabled = false;
+                googleBtn.innerHTML = originalHtml;
+              }
+            })
+            .catch(() => {
+              showGoogleError('Unable to reach the server. Please try again.');
+              googleBtn.disabled = false;
+              googleBtn.innerHTML = originalHtml;
+            });
+        },
+      });
+      googleBtn.addEventListener('click', () => tokenClient.requestAccessToken());
+    });
+  }
 </script>
 
 </body>

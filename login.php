@@ -371,7 +371,7 @@ body::after{
 
   if (!googleClientId || googleClientId.indexOf('PASTE-YOUR-CLIENT-ID') !== -1) {
     googleBtn.addEventListener('click', () => {
-      showGoogleError('Google Sign-In is not set up yet. See config/google-oauth.php.');
+      showGoogleError('Google Sign-In is not set up yet. Please log in with your email and password.');
     });
   } else {
     window.addEventListener('load', () => {

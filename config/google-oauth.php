@@ -10,10 +10,16 @@
 // (Client: "User login")
 // Ang GOOGLE_CLIENT_ID ug GOOGLE_CLIENT_SECRET naa na sa  .env  file (dili i-commit sa Git).
 // (Gi-flag sa GitHub push protection ang duha, mao nga gi-tago ang parehas.)
+// ---------- Client ID/Secret ----------
 require_once __DIR__ . '/env.php';
-if (!defined('GOOGLE_CLIENT_ID'))     define('GOOGLE_CLIENT_ID', '');
-if (!defined('GOOGLE_CLIENT_SECRET')) define('GOOGLE_CLIENT_SECRET', '');
 
+if (!defined('GOOGLE_CLIENT_ID')) {
+    define('GOOGLE_CLIENT_ID', getenv('GOOGLE_CLIENT_ID') ?: '');
+}
+
+if (!defined('GOOGLE_CLIENT_SECRET')) {
+    define('GOOGLE_CLIENT_SECRET', getenv('GOOGLE_CLIENT_SECRET') ?: '');
+}
 // ---------- Optional domain restriction (para sa STAFF login lang) ----------
 // Kung gusto limitahan ang staff Google Sign-In sa usa lang ka email domain
 // (e.g. 'geogene.gov.ph'), ibutang dinhi. Blangko ('') = walay restriction,

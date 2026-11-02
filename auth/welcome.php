@@ -91,8 +91,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($_SESSION['matched_record_id'], $_SESSION['search_full_name'], $_SESSION['identity_scan_verified']);
                 $_SESSION['pending_user_id'] = $userId;
                 $_SESSION['pending_email'] = $email;
+                $_SESSION['otp_last_sent'] = time();
+                $_SESSION['otp_wrong'] = 0;
                 if (!$emailSent) {
-                    if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
+                    if (GEOGENE_SHOW_DEV_OTP) {
+                        $_SESSION['dev_otp_preview'] = $otp;
+                    } else {
+                        $_SESSION['otp_mail_failed'] = 1;   // verify-email.php tells the user
+                        $_SESSION['otp_last_sent'] = 0;
+                    }
                 }
 
                 header('Location: verify-email.php');

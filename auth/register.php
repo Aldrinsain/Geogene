@@ -64,10 +64,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             unset($_SESSION['matched_record_id'], $_SESSION['search_full_name'], $_SESSION['ocr_date_of_birth'], $_SESSION['ocr_barangay']);
             $_SESSION['pending_user_id'] = $userId;
             $_SESSION['pending_email'] = $email;
+            $_SESSION['otp_last_sent'] = time();
+            $_SESSION['otp_wrong'] = 0;
             if (!$emailSent) {
                 // DEV MODE fallback: PHPMailer wala pa na-setup, ipakita ang OTP
                 // diretso sa verify-email.php screen para makapadayon og testing.
-                if (GEOGENE_SHOW_DEV_OTP) $_SESSION['dev_otp_preview'] = $otp;
+                if (GEOGENE_SHOW_DEV_OTP) {
+                    $_SESSION['dev_otp_preview'] = $otp;
+                } else {
+                    // Production: tell the user the email did not go out (verify-email.php shows it)
+                    $_SESSION['otp_mail_failed'] = 1;
+                    $_SESSION['otp_last_sent'] = 0;
+                }
             }
 
             header('Location: verify-email.php');
