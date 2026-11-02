@@ -126,16 +126,15 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="import-alert">
     ✅ Successfully imported <strong><?= $importedCount ?></strong> record<?= $importedCount === 1 ? '' : 's' ?> from your file.
     <?php if ($skippedCount): ?>
-      <?= $skippedCount ?> row<?= $skippedCount === 1 ? '' : 's' ?> were skipped (likely a duplicate registry number already in the system).
+      <?= $skippedCount ?> row<?= $skippedCount === 1 ? '' : 's' ?> could not be saved (details below).
     <?php endif; ?>
   </div>
   <?php if (!empty($_SESSION['import_skipped_details'])): ?>
     <div class="import-alert" style="background:#fdeceb;border-color:#f3c8c4;color:#7a2e26;">
-      ⚠ <strong>Skipped rows detail</strong> - these have the same Registry No. as a record already saved
-      (Registry No. must be unique). Fix the Registry No. in your spreadsheet and re-upload just these rows:
+      ⚠ <strong>Rows that were not saved</strong> - fix the cause below, then re-upload just these rows:
       <ul style="margin:8px 0 0 18px;padding:0;">
         <?php foreach ($_SESSION['import_skipped_details'] as $d): ?>
-          <li>Excel row <?= (int) $d['row'] ?>: <?= htmlspecialchars($d['name']) ?> - Registry No. <strong><?= htmlspecialchars($d['registry_number']) ?></strong> is already used by another record.</li>
+          <li>Excel row <?= (int) $d['row'] ?>: <?= htmlspecialchars($d['name']) ?> - Registry No. <strong><?= htmlspecialchars($d['registry_number']) ?></strong>: <?= htmlspecialchars($d['reason'] ?? 'could not be saved.') ?></li>
         <?php endforeach; ?>
       </ul>
     </div>

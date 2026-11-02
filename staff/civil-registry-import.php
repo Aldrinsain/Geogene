@@ -38,6 +38,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $step === 'parse') {
             unset($item);
         }
 
+        // Registry No. can repeat - make sure the database does not reject a second record with the same number.
+        require_once __DIR__ . '/includes/schema-ensure.php';
+        gg_allow_duplicate_registry_numbers($pdo);
+
         $stmt = $pdo->prepare("
             INSERT INTO civil_registry_records (registry_type, registry_number, book_no, page_no,
             city_municipality, date_prepared, full_name, first_name, middle_name,
@@ -60,14 +64,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $step === 'parse') {
                 ]);
                 $imported++;
             } catch (PDOException $e) {
-                // Most likely a duplicate registry_number (UNIQUE constraint) - skip and keep going,
-                // but remember exactly which row + registry number so the staff can see why afterward
-                // instead of just a mystery count of "skipped" rows.
+                // Keep going, but remember exactly which row failed and WHY, instead of a mystery count.
                 $skipped++;
+                $isDup = (int) ($e->errorInfo[1] ?? 0) === 1062;
+                error_log('[GeoGene import] row ' . $item['row'] . ' not saved: ' . $e->getMessage());
                 $skippedDetails[] = [
                     'row' => $item['row'],
                     'name' => $r['full_name'] ?: trim($r['first_name'] . ' ' . $r['last_name']),
                     'registry_number' => $r['registry_number'] ?: '(blank)',
+                    'reason' => $isDup
+                        ? 'The database still blocks repeated Registry Nos. Run migrations/allow_duplicate_registry_numbers.sql in phpMyAdmin, then upload again.'
+                        : 'The database could not save this row (check the Date, Sex and Name columns).',
                 ];
             }
         }
@@ -101,7 +108,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="panel" style="max-width:760px;">
     <div class="panel-header">
       <span class="panel-title">Upload File</span>
-      
+      <a href="civil-registry-template.php" class="btn btn-outline btn-sm">⬇ Download Template</a>
     </div>
 
     <div class="upload-info-banner">
@@ -220,6 +227,7 @@ require_once __DIR__ . '/includes/staff-header.php';
       <?php endforeach; ?>
     </div>
     <p style="color:var(--text-muted);font-size:11.5px;margin-top:12px;">
+      <strong>Registry No. may repeat</strong> - rows that share the same Registry No. are all saved.<br>
       * At least one name column is required per file. Older-style files with separate
       First Name / Last Name columns are also still supported.
     </p>
@@ -300,6 +308,33 @@ require_once __DIR__ . '/includes/staff-header.php';
         </p>
       <?php endif; ?>
     </details>
+
+    <?php
+      // Info only: how many rows share a Registry No. (with each other, or with a record already saved).
+      // They are ALL saved - this is just so the staff isn't surprised to see the same number twice.
+      $regCounts = [];
+      foreach ($preview['valid'] as $item) {
+          $rn = trim((string) ($item['record']['registry_number'] ?? ''));
+          if ($rn !== '') $regCounts[$rn] = ($regCounts[$rn] ?? 0) + 1;
+      }
+      $sharedInFile = 0;
+      foreach ($regCounts as $c) { if ($c > 1) $sharedInFile += $c; }
+      $sharedWithSaved = 0;
+      try {
+          foreach (array_chunk(array_keys($regCounts), 500) as $chunk) {
+              $q = $pdo->prepare('SELECT COUNT(*) FROM civil_registry_records WHERE registry_number IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')');
+              $q->execute($chunk);
+              $sharedWithSaved += (int) $q->fetchColumn();
+          }
+      } catch (Throwable $e) { /* info only */ }
+    ?>
+    <?php if ($sharedInFile || $sharedWithSaved): ?>
+      <div style="background:#eaf4ee;border:1px solid #cfe5d8;color:#1d5a35;border-radius:9px;padding:10px 14px;margin:10px 0;font-size:12.5px;">
+        ℹ <?php if ($sharedInFile): ?><strong><?= $sharedInFile ?></strong> row(s) in this file share a Registry No. with another row.<?php endif; ?>
+        <?php if ($sharedWithSaved): ?><strong><?= $sharedWithSaved ?></strong> saved record(s) already use one of these Registry Nos.<?php endif; ?>
+        Repeated Registry Nos. are allowed - <strong>all rows will still be saved</strong>.
+      </div>
+    <?php endif; ?>
 
     <span class="panel-title">Records to Import (<?= count($preview['valid']) ?>)</span>
 

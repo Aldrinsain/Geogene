@@ -84,6 +84,12 @@ if (empty($_SESSION['gg_schema_ok'])) {
     } catch (Throwable $e) { /* try again next time */ }
 }
 
+// Registry Nos. may repeat (e.g. several births with the same number): make sure the DB allows it.
+if (empty($_SESSION['gg_dup_regno_ok']) && gg_allow_duplicate_registry_numbers($pdo)
+    && session_status() === PHP_SESSION_ACTIVE) {
+    $_SESSION['gg_dup_regno_ok'] = 1;
+}
+
 // Presence heartbeat: bump last_seen so the dashboard can tell who's
 // currently online. Throttled via the session (only writes once per
 // minute) so this doesn't add a database write to every single page load.

@@ -13,6 +13,54 @@
  *     migrations/add_all_missing_registry_columns.sql
  */
 
+if (!function_exists('gg_allow_duplicate_registry_numbers')) {
+    /**
+     * Real civil-registry books repeat Registry Nos. (several births can carry the same number),
+     * so civil_registry_records must NOT reject a second record with the same Registry No.
+     * This drops every UNIQUE index that contains registry_number (the old single-column one and
+     * the optional (registry_type, registry_number) one) and keeps a normal, non-unique index so
+     * searching by Registry No. stays fast. Nothing else is touched; safe to run any number of times.
+     * Never throws: if the DB user may not ALTER, it is only logged (run
+     * migrations/allow_duplicate_registry_numbers.sql in phpMyAdmin instead).
+     */
+    function gg_allow_duplicate_registry_numbers(PDO $pdo): bool
+    {
+        static $done = null;
+        if ($done !== null) return $done;
+        try {
+            $rows = $pdo->query("SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SEQ_IN_INDEX
+                                 FROM information_schema.STATISTICS
+                                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'civil_registry_records'
+                                   AND INDEX_NAME <> 'PRIMARY'")->fetchAll(PDO::FETCH_ASSOC);
+            if (!$rows) return $done = true;            // table missing/has no indexes: nothing to do
+
+            $idx = [];
+            foreach ($rows as $r) {
+                $idx[$r['INDEX_NAME']]['unique'] = ((int) $r['NON_UNIQUE'] === 0);
+                $idx[$r['INDEX_NAME']]['cols'][(int) $r['SEQ_IN_INDEX']] = strtolower($r['COLUMN_NAME']);
+            }
+            foreach ($idx as $name => $info) {
+                if ($info['unique'] && in_array('registry_number', $info['cols'], true)) {
+                    $pdo->exec("ALTER TABLE civil_registry_records DROP INDEX `" . str_replace('`', '', $name) . "`");
+                    unset($idx[$name]);
+                }
+            }
+            $hasLookup = false;
+            foreach ($idx as $info) {
+                if (($info['cols'][1] ?? '') === 'registry_number') { $hasLookup = true; break; }
+            }
+            if (!$hasLookup) {
+                $pdo->exec("ALTER TABLE civil_registry_records ADD INDEX idx_registry_number (registry_number)");
+            }
+            return $done = true;
+        } catch (Throwable $e) {
+            error_log('[GeoGene import] could not allow duplicate Registry Nos: ' . $e->getMessage()
+                . ' -> run migrations/allow_duplicate_registry_numbers.sql in phpMyAdmin');
+            return $done = false;
+        }
+    }
+}
+
 if (!function_exists('gg_ensure_registry_schema')) {
     /** column => definition (everything the Civil Registry pages read or write) */
     function gg_registry_required_columns(): array
