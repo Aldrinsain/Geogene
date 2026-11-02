@@ -12,39 +12,18 @@ header('Pragma: no-cache');
 $userId = $_SESSION['user_id'];
 $activeNav = 'tree';
 
-/**
- * Navigation: clicking a relative's card (Father, Mother, a grandparent, a
- * sibling, a spouse, a child...) re-centers the WHOLE tree on THAT person,
- * exactly like the staff tool - and the Back arrow has to be able to walk
- * all the way back out through however many of those clicks were made,
- * ending on the signed-in user's OWN tree (never a blank page).
- *
- * This is done with two plain query-string params, carried on every
- * clickable node's link and on the Back link:
- *   record_id - whose tree is currently being shown (absent = "home",
- *               the signed-in user's own tree)
- *   path      - a comma-separated stack of the record_ids visited BEFORE
- *               this one, oldest first - so Back always knows exactly
- *               which tree to return to, however many hops deep we are.
- * Everything is driven by the URL (no client-side state to lose track of),
- * so repeated clicks and a full page reload both behave the same way.
- */
-function ft_parse_path(?string $raw): array
-{
-    if (!$raw) return [];
-    $ids = [];
-    foreach (explode(',', $raw) as $part) {
-        $part = trim($part);
-        if ($part !== '' && ctype_digit($part)) $ids[] = (int) $part;
-    }
-    return $ids;
-}
-function ft_path_str(array $ids): string
-{
-    return implode(',', array_map('intval', $ids));
-}
-
-$navPath = ft_parse_path($_GET['path'] ?? null);
+// ---------- Navigation: click any relative's card -> their own tree ----------
+// Clicking Father, Mother, a grandparent, a sibling, a spouse, or a child
+// re-centers the WHOLE tree on THAT person - exactly like the staff tool -
+// and the Back arrow walks all the way back out through however many of
+// those clicks were made, always ending on the signed-in user's OWN tree
+// (never a blank page). Ported straight from staff/family-tree.php so both
+// tools behave identically.
+//
+// "trail" is the list of record_ids of every tree visited so far, oldest
+// first, carried on the URL (?trail=5,9,14) - so Back is correct even
+// after a refresh, in another tab, or embedded anywhere else. The
+// signed-in user's own tree has NO trail and therefore no Back arrow.
 $viewRecordId = isset($_GET['record_id']) && ctype_digit((string) $_GET['record_id']) ? (int) $_GET['record_id'] : null;
 
 // Matching ignores CASE and ORDER: "Abao, Xander Sarzosa" (older records),
@@ -66,11 +45,10 @@ $stmt = $pdo->prepare("SELECT matched_record_id, full_name, identity_verified FR
 $stmt->execute([$userId]);
 $account = $stmt->fetch();
 
-// $ownRecord is the signed-in user's OWN identity - this never changes no
-// matter whose tree is currently being displayed, and stays the fixed
-// "Home" to return all the way to. $selfRecord is whichever person the
-// tree is CENTERED on right now: $ownRecord by default, or a relative
-// clicked through to via $viewRecordId.
+// $ownRecord is the signed-in user's OWN identity - fixed, the "Home" to
+// always be reachable from. $selfRecord is whichever person the tree is
+// CENTERED on right now: $ownRecord by default, or a relative navigated
+// to via $viewRecordId.
 $ownRecord = null;
 if ($account) {
     if (!empty($account['matched_record_id'])) {
@@ -88,36 +66,40 @@ if ($account) {
 }
 
 $selfRecord = $ownRecord;
-if ($viewRecordId !== null && $ownRecord && $viewRecordId !== (int) $ownRecord['record_id']) {
-    $stmt = $pdo->prepare("SELECT * FROM civil_registry_records WHERE record_id = ?");
-    $stmt->execute([$viewRecordId]);
-    $viewedRecord = $stmt->fetch() ?: null;
-    if ($viewedRecord) {
-        $selfRecord = $viewedRecord;
-    } else {
-        // A stale/invalid record_id in the URL (deleted record, tampered
-        // link...) - fall back to "home" instead of showing a blank page.
-        // $navPath is cleared too, so Back (if it were still shown) can't
-        // walk through a chain that no longer makes sense - but since this
-        // now resolves to the owner's own tree, $isOwnTree below makes the
-        // Back arrow disappear anyway, which is the correct end state.
-        $viewRecordId = null;
-        $navPath = [];
-    }
-}
+$tree = null;
+$ftTrail = [];
 
-// The single source of truth for the Back arrow: it shows precisely when
-// the tree on screen is NOT the signed-in user's own ("Home") tree -
-// never based on raw URL params alone, so navigating back (or straight to
-// a bare tree.php) always hides it again, and a stale record_id that
-// quietly falls back to "home" above hides it too.
-$isOwnTree = $ownRecord && $selfRecord && (int) $ownRecord['record_id'] === (int) $selfRecord['record_id'];
+if ($ownRecord) {
+    $allRecords = $pdo->query("SELECT * FROM civil_registry_records")->fetchAll();
+
+    // A relative was clicked ($viewRecordId set) - switch $selfRecord to
+    // THEM, validating the id is a real record first so a stale/tampered
+    // URL falls back to "home" instead of a blank page.
+    if ($viewRecordId !== null && $viewRecordId !== (int) $ownRecord['record_id']) {
+        foreach ($allRecords as $r) {
+            if ((int) $r['record_id'] === $viewRecordId) { $selfRecord = $r; break; }
+        }
+        if ($selfRecord === $ownRecord) $viewRecordId = null; // id wasn't found - stay home
+    }
+
+    // Build the trail (same validate-and-dedupe rules as the staff tool).
+    $validIds = [];
+    foreach ($allRecords as $r) $validIds[(int) $r['record_id']] = true;
+    $selfIdForTrail = (int) $selfRecord['record_id'];
+    foreach (explode(',', (string) ($_GET['trail'] ?? '')) as $part) {
+        $tid = (int) trim($part);
+        if ($tid <= 0 || !isset($validIds[$tid])) continue;
+        if ($ftTrail && end($ftTrail) === $tid) continue;
+        $ftTrail[] = $tid;
+    }
+    while ($ftTrail && end($ftTrail) === $selfIdForTrail) array_pop($ftTrail);
+    $ftTrail = array_slice($ftTrail, -40);
+}
+$ftNextTrail = $ftTrail ? implode(',', array_merge($ftTrail, [(int) $selfRecord['record_id']])) : (string) ((int) ($selfRecord['record_id'] ?? 0));
+$isOwnTree = $ownRecord && (int) $ownRecord['record_id'] === (int) $selfRecord['record_id'];
 $showBackArrow = $ownRecord && !$isOwnTree;
 
-$tree = null;
-
 if ($selfRecord) {
-    $allRecords = $pdo->query("SELECT * FROM civil_registry_records")->fetchAll();
     $nameIndex = [];
     foreach ($allRecords as $r) {
         $key = ft_normalize(ft_full_name($r));
@@ -224,36 +206,29 @@ if ($selfRecord) {
 }
 
 /**
- * The link for a clickable relative's card: null when that card shouldn't
- * be clickable at all (no real record behind it, or it's the person the
- * tree is already centered on). Otherwise carries the current person
- * forward onto the back-stack ($navPath) so Back can return to exactly
- * this tree afterward.
+ * The link for a clickable relative's card: null when it shouldn't be
+ * clickable (no real record behind it, or it's the person already
+ * centered). Carries the current trail + current person forward as
+ * ?trail=... so Back can retrace every hop, same as the staff tool.
  */
 function ft_relative_href($record): ?string
 {
-    global $selfRecord, $navPath;
+    global $selfRecord, $ftNextTrail;
     if (!$record || empty($record['record_id']) || !empty($record['virtual'])) return null;
     $targetId = (int) $record['record_id'];
     if ($selfRecord && (int) $selfRecord['record_id'] === $targetId) return null;
-
-    $newPath = $navPath;
-    if ($selfRecord) $newPath[] = (int) $selfRecord['record_id'];
-
-    $href = 'tree.php?record_id=' . $targetId;
-    if ($newPath) $href .= '&path=' . urlencode(ft_path_str($newPath));
-    return $href;
+    return 'tree.php?record_id=' . $targetId . '&trail=' . urlencode($ftNextTrail);
 }
 
-/** Pops the most recent stop off the back-stack - "home" once it's empty. */
+/** Pops the most recent stop off the trail - "home" (bare tree.php) once it's empty. */
 function ft_back_href(): string
 {
-    global $navPath;
-    if (!$navPath) return 'tree.php';
-    $path = $navPath;
+    global $ftTrail;
+    if (!$ftTrail) return 'tree.php';
+    $path = $ftTrail;
     $prevId = array_pop($path);
     $href = 'tree.php?record_id=' . $prevId;
-    if ($path) $href .= '&path=' . urlencode(ft_path_str($path));
+    if ($path) $href .= '&trail=' . urlencode(implode(',', $path));
     return $href;
 }
 
@@ -292,8 +267,10 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
     $href = ft_relative_href($record);
     if ($href) {
         // A real relative with their own Civil Registry record - clicking
-        // re-centers the whole tree on THEM, carrying the current person
-        // onto the back-stack first (see ft_relative_href()).
+        // re-centers the whole tree on THEM (Father -> his own tree with
+        // his parents/siblings, Mother -> hers, a sibling -> theirs, a
+        // child -> theirs - same click-through-to-anyone behavior as the
+        // staff tool).
         echo '<a class="' . $cls . ' clickable" href="' . htmlspecialchars($href) . '" data-gen="' . $gen . '" data-rel="' . $rel . '" data-ft-node="' . $id . '" title="View ' . htmlspecialchars($name) . '\'s family tree">
                 ' . $inner . '
               </a>';
@@ -361,10 +338,10 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
   #treeWrap{
     background:var(--blue-light);border:1px solid var(--border);border-radius:20px;
     padding:20px 16px;box-shadow: 0 4px 5px rgba(0,0,0,0.14), 0 6px 10px rgba(0,0,0,0.12);
-    /* Large trees (several generations, many siblings/aunts/uncles) can
-       grow wider AND taller than the screen - this box scrolls on BOTH
-       axes on its own, independent of the page, so the zoom controls and
-       bottom nav stay anchored in place while staff pan around the tree. */
+    /* A deep/wide tree (several generations, many siblings or aunts/uncles)
+       can grow taller AND wider than the screen - this box scrolls on
+       BOTH axes on its own, so the zoom bar and bottom nav stay put while
+       the diagram underneath gets panned around. */
     overflow:auto;
     max-height:calc(100dvh - 230px);
     -webkit-overflow-scrolling:touch;
