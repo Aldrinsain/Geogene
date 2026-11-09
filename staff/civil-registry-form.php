@@ -300,7 +300,7 @@ require_once __DIR__ . '/includes/staff-header.php';
         <div style="border:1px solid var(--border);border-radius:8px;padding:10px;">
           <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">Upload the photo of the certificate</div>
           <input type="file" id="scanFile-front-1" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:4px;">
-          <input type="file" id="scanFile-front-2" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:8px;">
+          
           <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;"></div>
           <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('front', this)">📷 SCAN</button>
           <div id="scanPreview-front" style="margin-top:8px;"><?php if ($scanFrontExisting): ?><img src="<?= htmlspecialchars(gg_scan_url($scanFrontExisting)) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
