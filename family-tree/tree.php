@@ -570,11 +570,7 @@ function ftNode($record, $role = '', $isSelf = false, $gen = 1, $rel = '') {
       <span class="close-x" onclick="closeFilterModal()">✕</span>
     </div>
 
-    <div class="filter-section-label">Generation</div>
-    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="3" checked> Grandparents</label>
-    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="2" checked> Parents</label>
-    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="1" checked> You / Siblings / Spouse</label>
-    <label class="filter-check-row"><input type="checkbox" class="gen-check" value="0" checked> Children</label>
+    
 
     <div class="filter-section-label">Relationship</div>
     <label class="filter-check-row"><input type="checkbox" class="rel-check" value="parents" checked> Parents</label>

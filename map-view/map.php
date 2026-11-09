@@ -247,14 +247,14 @@ $centerLng = 124.8656;
 
     <div class="filter-section-label">Show on map</div>
     <label class="filter-check-row"><input type="checkbox" class="show-check" value="immediate" checked> Immediate Family</label>
-    <label class="filter-check-row"><input type="checkbox" class="show-check" value="extended" checked> Extended Family</label>
+
     <label class="filter-check-row"><input type="checkbox" id="showAllCheck" checked> Show All Families</label>
 
     <div class="filter-section-label">Sort By</div>
-    <label class="filter-check-row"><input type="radio" name="sortBy" value="name" checked> Family Name</label>
-    <label class="filter-check-row"><input type="radio" name="sortBy" value="barangay"> Barangay</label>
-    <label class="filter-check-row"><input type="radio" name="sortBy" value="distance"> Distance</label>
 
+    <label class="filter-check-row"><input type="radio" name="sortBy" value="barangay"> Barangay</label>
+
+    
     <div class="filter-modal-actions">
       <button type="button" class="btn-outline" onclick="resetMapFilter()">Reset</button>
       <button type="button" class="btn-primary" onclick="applyMapFilter()">Apply Filter</button>

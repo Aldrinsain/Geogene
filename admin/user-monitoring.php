@@ -119,7 +119,7 @@ require_once __DIR__ . '/includes/admin-header.php';
 <div class="panel">
   <div class="panel-header">
     <span class="panel-title">All Registered Users (<?= number_format((int) $totalRows) ?>)</span>
-    <a href="../staff/user-management.php" class="btn btn-outline btn-sm">Manage Users</a>
+
   </div>
 
   <form method="GET" class="table-toolbar">
@@ -130,7 +130,7 @@ require_once __DIR__ . '/includes/admin-header.php';
       <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Pending</option>
       <option value="disabled" <?= $statusFilter === 'disabled' ? 'selected' : '' ?>>Disabled</option>
     </select>
-    <button type="submit" class="btn btn-outline btn-sm">Filter</button>
+    
   </form>
 
   <table class="data-table">

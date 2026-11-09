@@ -155,7 +155,7 @@ $activeNav = 'profile';
 
 <div class="phone">
   <div class="content-scroll">
-    <div class="app-header"><span>My Profile</span><span class="menu-dots">⋮</span></div>
+    
 
     <div class="profile-avatar-wrap">
       <div class="profile-avatar" id="profileAvatarCircle">

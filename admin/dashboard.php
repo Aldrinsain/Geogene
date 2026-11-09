@@ -117,36 +117,7 @@ require_once __DIR__ . '/includes/svg-charts.php';
   </div>
 </div>
 
-<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:20px;">
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">User Registrations vs Staff/Admin Logins (last 6 months)</span></div>
-    <div style="height:260px;">
-      <?= geogene_svg_line_chart($chartLabels, [
-            ['label' => 'New Users', 'color' => '#1b6e3c', 'data' => $chartUsers],
-            ['label' => 'Staff/Admin Logins', 'color' => '#3b82f6', 'data' => $chartStaffActions],
-          ]) ?>
-    </div>
-    <?= geogene_chart_legend([
-          ['label' => 'New Users', 'color' => '#1b6e3c'],
-          ['label' => 'Staff/Admin Logins', 'color' => '#3b82f6'],
-        ]) ?>
-  </div>
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">User Status</span></div>
-    <div style="height:190px;display:flex;align-items:center;justify-content:center;">
-      <?= geogene_svg_donut_chart([
-            ['label' => 'Active', 'value' => $activeUsers, 'color' => '#1b6e3c'],
-            ['label' => 'Pending', 'value' => $pendingUsers, 'color' => '#f59e0b'],
-            ['label' => 'Disabled', 'value' => max(0, $totalUsers - $activeUsers - $pendingUsers), 'color' => '#ef4444'],
-          ]) ?>
-    </div>
-    <?= geogene_chart_legend([
-          ['label' => 'Active', 'color' => '#1b6e3c'],
-          ['label' => 'Pending', 'color' => '#f59e0b'],
-          ['label' => 'Disabled', 'color' => '#ef4444'],
-        ]) ?>
-  </div>
-</div>
+
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
   <div class="panel">
