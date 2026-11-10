@@ -23,8 +23,7 @@ if (!function_exists('gg_search_script')) {
                 ['t' => 'Pending Users',            'u' => 'user-monitoring.php?status=pending',  'd' => 'Citizen accounts not yet active',    'k' => 'waiting verification unverified', 'g' => 'Filter', 'i' => '⏳'],
                 ['t' => 'Civil Registry Records',   'u' => 'civil-registry.php',            'd' => 'Birth, marriage and death records',         'k' => 'records registry certificates mcro list', 'g' => 'Page', 'i' => '📑', 'top' => 1],
                 ['t' => 'Birth Records',            'u' => 'civil-registry.php?type=birth',    'd' => 'Certificates of Live Birth',    'k' => 'born child baby', 'g' => 'Records', 'i' => '👶'],
-                ['t' => 'Marriage Records',         'u' => 'civil-registry.php?type=marriage', 'd' => 'Certificates of Marriage',      'k' => 'married husband wife spouse wedding', 'g' => 'Records', 'i' => '💍'],
-                ['t' => 'Death Records',            'u' => 'civil-registry.php?type=death',    'd' => 'Certificates of Death',         'k' => 'died deceased patay', 'g' => 'Records', 'i' => '🕊️'],
+                
                 ['t' => 'Family Tree',              'u' => 'family-tree.php',               'd' => 'View or generate a family lineage',         'k' => 'genealogy lineage relatives ancestors parents children pamilya', 'g' => 'Page', 'i' => '🌳', 'top' => 1],
                 ['t' => 'Geographic Map',           'u' => 'map.php',                       'd' => 'Where families live, by barangay',          'k' => 'location barangay mapa markers places', 'g' => 'Page', 'i' => '🗺️', 'top' => 1],
                 ['t' => 'Reports',                  'u' => 'reports.php',                   'd' => 'Summaries and activity reports',            'k' => 'report logs summary statistics export', 'g' => 'Page', 'i' => '📊', 'top' => 1],
@@ -43,12 +42,10 @@ if (!function_exists('gg_search_script')) {
             ['t' => 'Death Records',              'u' => 'civil-registry.php?type=death',    'd' => 'Certificates of Death',           'k' => 'died deceased patay', 'g' => 'Records', 'i' => '🕊️'],
             ['t' => 'Add Civil Registry Record',  'u' => 'civil-registry-form.php',      'd' => 'Encode a new birth, marriage or death record', 'k' => 'new create encode register add', 'g' => 'Action', 'i' => '➕', 'top' => 1],
             ['t' => 'Add Birth Record',           'u' => 'civil-registry-form.php?type=birth',    'd' => 'New Certificate of Live Birth',  'k' => 'new born child baby add', 'g' => 'Action', 'i' => '➕'],
-            ['t' => 'Add Marriage Record',        'u' => 'civil-registry-form.php?type=marriage', 'd' => 'New Certificate of Marriage', 'k' => 'new married husband wife add', 'g' => 'Action', 'i' => '➕'],
-            ['t' => 'Add Death Record',           'u' => 'civil-registry-form.php?type=death',    'd' => 'New Certificate of Death',    'k' => 'new died deceased add', 'g' => 'Action', 'i' => '➕'],
-            ['t' => 'Scan a Certificate',         'u' => 'civil-registry-scan.php',      'd' => 'Read a certificate photo (OCR)',              'k' => 'ocr scan upload photo camera picture', 'g' => 'Action', 'i' => '📷'],
+                      ['t' => 'Scan a Certificate',         'u' => 'civil-registry-scan.php',      'd' => 'Read a certificate photo (OCR)',              'k' => 'ocr scan upload photo camera picture', 'g' => 'Action', 'i' => '📷'],
             ['t' => 'Bulk Scan Certificates',     'u' => 'civil-registry-bulk-scan.php', 'd' => 'Scan many certificates at once',              'k' => 'ocr scan many multiple batch upload photos', 'g' => 'Action', 'i' => '🗂️'],
             ['t' => 'Import Records from Excel',  'u' => 'civil-registry-import.php',    'd' => 'Upload a spreadsheet of records',             'k' => 'excel xlsx spreadsheet upload import template', 'g' => 'Action', 'i' => '📥'],
-            
+
             ['t' => 'Verification Monitoring',    'u' => 'verification-monitoring.php',  'd' => 'Check and approve citizen identity verification', 'k' => 'verify identity id approve reject pending review', 'g' => 'Page', 'i' => '🛡️', 'top' => 1],
             ['t' => 'User Management',            'u' => 'user-management.php',          'd' => 'Citizen accounts: search, filter, enable/disable', 'k' => 'users citizens accounts enable disable filter', 'g' => 'Page', 'i' => '👥', 'top' => 1],
             ['t' => 'Disabled Users',             'u' => 'user-management.php?status=disabled', 'd' => 'Accounts that were disabled',          'k' => 'suspended blocked inactive', 'g' => 'Filter', 'i' => '🚫'],
