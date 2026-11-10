@@ -190,11 +190,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $suffix = $isEdit ? ($record['suffix'] ?? null) : null;
         $remarks = $isEdit ? ($record['remarks'] ?? null) : null;
         $zone = $isEdit ? ($record['zone'] ?? null) : null;
+        $pageNo = $isEdit ? ($record['page_no'] ?? null) : null;
+        $datePrepKeep = $isEdit ? (ggIsoOrEmpty($record['date_prepared'] ?? '') ?: null) : null;
       
         
 
         $data = [
-            $type, $registryNumber ?: null, $barangay, $datePrepKeep,
+            $type, $registryNumber ?: null, $bookNo, $pageNo, $cityMunicipality, $datePrepKeep,
             $fullName ?: null, $firstName, $middleName ?: null, $lastName, $suffix,
             $sex, $civilStatus, $dateOfEvent, $dateOfBirth, $placeOfEvent,
             $fatherName, $motherName, $spouseName, $wifeFatherName, $wifeMotherName,
@@ -274,6 +276,23 @@ if ($postRepopulate) {
     $spouseNameDisplay = formatGivenMiddleSurname($sdFirst, $sdMiddle, $sdLast);
 }
 
+// ---------- Barangay dropdown: the 22 barangays of Manolo Fortich ----------
+// Gikan sa `barangays` table (parehas sa gigamit sa Map) - fallback sa fixed list kung walay sulod.
+$barangayOptions = [];
+try {
+    foreach ($pdo->query("SELECT name FROM barangays ORDER BY name") as $b) $barangayOptions[] = $b['name'];
+} catch (Throwable $e) { /* use the fallback below */ }
+if (count($barangayOptions) < 22) {
+    $barangayOptions = ['Agusan Canyon','Alae','Dahilayan','Dalirig','Damilag','Dicklum','Guilang-guilang','Kalugmanan',
+        'Lindaban','Lingion','Lunocan','Maluko','Mambatangan','Mampayag','Mantibugao','Minsuro','San Miguel',
+        'Sankanan','Santiago','Sto. Niño','Tankulan (Pob.)','Ticala'];
+}
+$selectedBarangay = (string) gg_canonical_barangay($pdo, $record['barangay'] ?? '');
+// An older record may hold a barangay not in the list - keep it visible so it is never silently wiped on Save.
+if ($selectedBarangay !== '' && !in_array($selectedBarangay, $barangayOptions, true)) {
+    array_unshift($barangayOptions, $selectedBarangay);
+}
+
 require_once __DIR__ . '/includes/staff-header.php';
 ?>
 
@@ -284,6 +303,9 @@ require_once __DIR__ . '/includes/staff-header.php';
     <?php
       $scanFrontExisting  = $record['scan_image_path'] ?? '';
 
+      $scanFront2Existing = $record['scan_image_path_2'] ?? '';
+      $scanBackExisting   = $record['scan_image_path_back'] ?? '';
+      $scanBack2Existing  = $record['scan_image_path_back_2'] ?? '';
       $certDataExisting   = $record['certificate_data'] ?? '';
     ?>
     <div class="panel" style="background:var(--bg-page);border:1px solid var(--border);border-radius:9px;padding:14px;margin-bottom:16px;">
@@ -300,7 +322,7 @@ require_once __DIR__ . '/includes/staff-header.php';
         <div style="border:1px solid var(--border);border-radius:8px;padding:10px;">
           <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">Upload the photo of the certificate</div>
           <input type="file" id="scanFile-front-1" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:4px;">
-          
+          <input type="file" id="scanFile-front-2" accept="image/jpeg,image/png,image/webp" style="width:100%;font-size:12px;margin-bottom:8px;">
           <div style="font-size:10.5px;color:var(--text-muted);margin:-4px 0 8px;"></div>
           <button type="button" class="btn btn-outline btn-sm" style="width:100%;" onclick="scanSide('front', this)">📷 SCAN</button>
           <div id="scanPreview-front" style="margin-top:8px;"><?php if ($scanFrontExisting): ?><img src="<?= htmlspecialchars(gg_scan_url($scanFrontExisting)) ?>" style="max-width:100%;border:1px solid var(--border);border-radius:6px;"><?php endif; ?></div>
@@ -325,8 +347,7 @@ require_once __DIR__ . '/includes/staff-header.php';
         <label>Registry Type *</label>
         <select name="registry_type" id="registryType" required>
           <option value="birth" <?= $type === 'birth' ? 'selected' : '' ?>>Birth</option>
-          <option value="marriage" <?= $type === 'marriage' ? 'selected' : '' ?>>Marriage</option>
-          <option value="death" <?= $type === 'death' ? 'selected' : '' ?>>Death</option>
+          
         </select>
       </div>
       <div class="form-row">
@@ -335,7 +356,15 @@ require_once __DIR__ . '/includes/staff-header.php';
       </div>
     </div>
 
-    <div class="form-row"><label>Barangay</label><input type="text" name="barangay" autocomplete="off" value="<?= htmlspecialchars($record['barangay'] ?? '') ?>"></div>
+    <div class="form-row">
+      <label>Barangay</label>
+      <select name="barangay" id="barangaySelect">
+        <option value="">-- Select Barangay --</option>
+        <?php foreach ($barangayOptions as $bgy): ?>
+          <option value="<?= htmlspecialchars($bgy) ?>" <?= $selectedBarangay === $bgy ? 'selected' : '' ?>><?= htmlspecialchars($bgy) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
 
     <!-- ============== BIRTH fields ============== -->
     <div id="fields-birth">
@@ -560,7 +589,7 @@ function dateMaskIconSvg(): string
     var t = e.target;
     if (!t || !t.name) return;
     if (GG_NAME_FIELDS.indexOf(t.name) !== -1 && t.value) t.value = ggGivenFirst(t.value);
-    else if ((t.name === 'barangay' || t.name === 'place_of_event') && t.value) t.value = ggTitleCase(t.value);
+    else if (t.tagName !== 'SELECT' && (t.name === 'barangay' || t.name === 'place_of_event') && t.value) t.value = ggTitleCase(t.value);
   });
 
   function applyText(selector, key, val) {
@@ -575,7 +604,19 @@ function dateMaskIconSvg(): string
     if (!el) el = all[0] || null;
     if (!el || scanFilledKeys[key]) return false;
     if (el.value && el.value.trim() !== '') return false;
-    el.value = val;
+    if (el.tagName === 'SELECT') {
+      // Barangay dropdown: pick the option that matches what OCR read (exact, or "Tankulan" -> "Tankulan (Pob.)")
+      var want = String(val).toLowerCase().trim(), hit = null;
+      for (var k = 0; k < el.options.length && !hit; k++) {
+        var ot = el.options[k].text.toLowerCase().trim();
+        var base = ot.replace(/\s*\(.*?\)\s*/g, '').trim();
+        if (ot && (ot === want || (base && (base === want || want.indexOf(base) !== -1)))) hit = el.options[k];
+      }
+      if (!hit) return false;
+      el.value = hit.value;
+    } else {
+      el.value = val;
+    }
     scanFilledKeys[key] = true;
     flash(el);
     return true;
@@ -642,7 +683,7 @@ function dateMaskIconSvg(): string
     // since that mode's multi-pass image enhancement only exists server-side.
     var clientText = '';
     if (!(oldModeEl && oldModeEl.checked)) {
-      clientText = await recognizeInBrowser([file1.files[0], file2.files[0]], statusEl);
+      clientText = await recognizeInBrowser([file1.files[0], file2 && file2.files[0]], statusEl);
     }
 
     var fd = new FormData();
@@ -650,7 +691,7 @@ function dateMaskIconSvg(): string
     fd.append('registry_type', registryType);
     if (oldModeEl && oldModeEl.checked) fd.append('old_certificate_mode', '1');
     fd.append('certificate_image', file1.files[0]);
-    if (file2.files[0]) fd.append('certificate_image2', file2.files[0]);
+    if (file2 && file2.files[0]) fd.append('certificate_image2', file2.files[0]);
     if (clientText) fd.append('ocr_text_client', clientText);
 
     var cycle = startLoadingCycle(statusEl);

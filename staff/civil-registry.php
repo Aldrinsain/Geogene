@@ -212,10 +212,8 @@ require_once __DIR__ . '/includes/staff-header.php';
       <div class="filter-grid">
         <label>Record Type
           <select name="type">
-            <option value="">All Types</option>
-            <option value="birth" <?= $typeFilter === 'birth' ? 'selected' : '' ?>>Birth Records</option>
-            <option value="marriage" <?= $typeFilter === 'marriage' ? 'selected' : '' ?>>Marriage Records</option>
-            <option value="death" <?= $typeFilter === 'death' ? 'selected' : '' ?>>Death Records</option>
+            <option value="">Birth</option>
+          
           </select>
         </label>
         <label>Barangay
@@ -370,7 +368,7 @@ require_once __DIR__ . '/includes/staff-header.php';
             <?php if (!empty($r['certificate_data'])): ?>
               <a href="civil-registry-print.php?id=<?= $r['record_id'] ?>" class="icon-btn" title="Print Exact Certificate">🖨️</a>
             <?php endif; ?>
-            
+
           </td>
         </tr>
       <?php endforeach; endif; ?>

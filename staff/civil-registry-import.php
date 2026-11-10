@@ -108,7 +108,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="panel" style="max-width:760px;">
     <div class="panel-header">
       <span class="panel-title">Upload File</span>
-      <a href="civil-registry-template.php" class="btn btn-outline btn-sm">⬇ Download Template</a>
+
     </div>
 
     <div class="upload-info-banner">
@@ -199,12 +199,12 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="panel" style="max-width:760px;">
     <span class="panel-title">Expected Columns</span>
     <p style="color:var(--text-secondary);font-size:13px;margin:8px 0 12px;">
-      Column names are flexible (not case-sensitive, spaces optional). Upload your Birth, Marriage, or Death
+      Column names are flexible (not case-sensitive, spaces optional). Upload your Birth
       register file as-is - the <strong>type is detected automatically</strong> from whichever name column is
       present (e.g. "Name of Child" = Birth). Extra columns in your file are ignored.
     </p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      <?php foreach (['Barangay', 'Zone', 'City/Municipality', 'Book No.', 'Registry No.'] as $col): ?>
+      <?php foreach (['Barangay', 'Registry No.'] as $col): ?>
         <span class="badge gray"><?= htmlspecialchars($col) ?></span>
       <?php endforeach; ?>
     </div>
@@ -214,18 +214,7 @@ require_once __DIR__ . '/includes/staff-header.php';
         <span class="badge green"><?= htmlspecialchars($col) ?></span>
       <?php endforeach; ?>
     </div>
-    <p style="color:var(--text-secondary);font-size:12.5px;font-weight:700;margin:0 0 6px;">For Marriage records:</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
-      <?php foreach (['Date of Marriage', 'Name of Wife*', 'Name of Husband*'] as $col): ?>
-        <span class="badge blue"><?= htmlspecialchars($col) ?></span>
-      <?php endforeach; ?>
-    </div>
-    <p style="color:var(--text-secondary);font-size:12.5px;font-weight:700;margin:0 0 6px;">For Death records:</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;">
-      <?php foreach (['Date of Death', 'Name of Deceased*'] as $col): ?>
-        <span class="badge gray"><?= htmlspecialchars($col) ?></span>
-      <?php endforeach; ?>
-    </div>
+    
     <p style="color:var(--text-muted);font-size:11.5px;margin-top:12px;">
       <strong>Registry No. may repeat</strong> - rows that share the same Registry No. are all saved.<br>
       * At least one name column is required per file. Older-style files with separate

@@ -51,8 +51,7 @@ require_once __DIR__ . '/includes/staff-header.php';
     <label>Registry Type for this batch *</label>
     <select id="bulkType">
       <option value="birth">Birth</option>
-      <option value="marriage">Marriage</option>
-      <option value="death">Death</option>
+  
     </select>
     <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">
       All photos in one batch should be the SAME certificate type (a stack of Birth certificates, for example).
