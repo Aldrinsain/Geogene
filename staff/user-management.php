@@ -85,20 +85,7 @@ if ($dateFrom)            $chips[] = ['From: ' . date('M d, Y', strtotime($dateF
 if ($dateTo)              $chips[] = ['To: ' . date('M d, Y', strtotime($dateTo)), $umUrl([], ['to', 'page'])];
 if ($sortKey !== 'newest') $chips[] = ['Sort: ' . $sortLabels[$sortKey], $umUrl([], ['sort', 'page'])];
 
-// ---------- EXPORT TO EXCEL / CSV: every user that matches the current search + filters (not just this page) ----------
-if (isset($_GET['export'])) {
-    require_once __DIR__ . '/includes/export-helper.php';
-    $exStmt = $pdo->prepare("SELECT * FROM users $whereSql ORDER BY {$sortMap[$sortKey]}, user_id DESC");
-    $exStmt->execute($params);
-    $exRows = [];
-    while ($r = $exStmt->fetch()) $exRows[] = gg_users_export_row($r);
-    gg_export_send(
-        $_GET['export'] === 'xlsx' ? 'xlsx' : 'csv',
-        'users-' . date('Ymd-His'),
-        gg_users_export_headers(), $exRows,
-        ['sheet' => 'Users', 'date_cols' => [4, 7]]
-    );
-}
+
 
 $pageTitle = 'User Management';
 $pageSub = 'Manage all registered GeoGene user accounts.';
@@ -109,10 +96,7 @@ require_once __DIR__ . '/includes/staff-header.php';
 <div class="panel">
   <div class="panel-header">
     <span class="panel-title">All Users (<?= number_format($totalRows) ?>)</span>
-    <span style="display:inline-flex;gap:8px;flex-wrap:wrap;">
-      <a href="<?= htmlspecialchars($umUrl(['export' => 'xlsx'], ['page'])) ?>" class="btn btn-outline btn-sm" title="Download ALL <?= number_format($totalRows) ?> user(s) in this list as an Excel file (.xlsx)">⬇ Export Excel</a>
-      <a href="<?= htmlspecialchars($umUrl(['export' => 'csv'], ['page'])) ?>" class="btn btn-outline btn-sm" title="Download ALL <?= number_format($totalRows) ?> user(s) in this list as a CSV file">⬇ Export CSV</a>
-    </span>
+  
   </div>
 
   <style>
@@ -157,10 +141,7 @@ require_once __DIR__ . '/includes/staff-header.php';
           <option value="unverified" <?= $identityFilter === 'unverified' ? 'selected' : '' ?>>Unverified</option>
         </select>
       </div>
-      <div>
-        <label for="umFrom">Registered from</label>
-        <input type="date" name="from" id="umFrom" value="<?= htmlspecialchars($dateFrom) ?>">
-      </div>
+      
       <div>
         <label for="umTo">Registered until</label>
         <input type="date" name="to" id="umTo" value="<?= htmlspecialchars($dateTo) ?>">

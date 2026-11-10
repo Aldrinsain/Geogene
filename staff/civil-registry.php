@@ -162,7 +162,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   <div class="panel-header">
     <span class="panel-title">All Records (<?= number_format($totalRows) ?>)</span>
     <div style="display:flex;gap:10px;">
-      <button type="button" class="btn btn-danger" onclick="document.getElementById('deleteAllModal').style.display='flex'">🗑️ Delete All Records</button>
+      
       <a href="civil-registry-import.php" class="btn btn-outline">⬆ Import Excel</a>
       <a href="civil-registry-bulk-scan.php" class="btn btn-outline"><svg xmlns="http://www.w3.org/2000/svg"
      viewBox="38.25 0 440.75 516.375"
@@ -370,16 +370,7 @@ require_once __DIR__ . '/includes/staff-header.php';
             <?php if (!empty($r['certificate_data'])): ?>
               <a href="civil-registry-print.php?id=<?= $r['record_id'] ?>" class="icon-btn" title="Print Exact Certificate">🖨️</a>
             <?php endif; ?>
-            <form method="POST" action="civil-registry-delete.php" style="display:inline;" onsubmit="return confirm('Delete this record (<?= htmlspecialchars(addslashes($fullName)) ?>)? This cannot be undone.');">
-              <input type="hidden" name="record_id" value="<?= $r['record_id'] ?>">
-              <input type="hidden" name="return_qs" value="<?= htmlspecialchars(http_build_query($filterQS)) ?>">
-              <input type="hidden" name="page" value="<?= $page ?>">
-              <button type="submit" class="icon-btn danger" title="Delete">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                </svg>
-              </button>
-            </form>
+            
           </td>
         </tr>
       <?php endforeach; endif; ?>
@@ -409,27 +400,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   </div>
 </div>
 
-<!-- Delete-All confirmation modal - requires typing "DELETE ALL" so 628
-     records can't be wiped out by a stray click. -->
-<div id="deleteAllModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:12px;padding:24px;max-width:420px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.2);">
-    <h3 style="margin:0 0 8px;color:var(--danger);">⚠ Delete ALL records?</h3>
-    <p style="font-size:13.5px;color:var(--text-secondary);margin:0 0 14px;line-height:1.5;">
-      This will permanently delete <strong>all <?= number_format($totalRows) ?> civil registry records</strong>
-      (not just this page or filter) — including any that are linked to citizen accounts. This cannot be undone.
-      Type <strong>DELETE ALL</strong> below to confirm.
-    </p>
-    <form method="POST" action="civil-registry-delete-all.php">
-      <input type="text" id="deleteAllConfirmInput" name="confirm" autocomplete="off" placeholder="Type DELETE ALL"
-             style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box;"
-             oninput="document.getElementById('deleteAllSubmitBtn').disabled = (this.value !== 'DELETE ALL')">
-      <div style="display:flex;gap:10px;justify-content:flex-end;">
-        <button type="button" class="btn btn-outline" onclick="document.getElementById('deleteAllModal').style.display='none'; document.getElementById('deleteAllConfirmInput').value=''; document.getElementById('deleteAllSubmitBtn').disabled=true;">Cancel</button>
-        <button type="submit" id="deleteAllSubmitBtn" class="btn btn-danger" disabled>Delete All Records</button>
-      </div>
-    </form>
-  </div>
-</div>
+
 
 
 <style>

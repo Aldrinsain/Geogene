@@ -142,15 +142,7 @@ function staffTimeAgo($datetime) {
   <path d="M18.75 6.75h1.875c.621 0 1.125.504 1.125 1.125V18a1.5 1.5 0 0 1-3 0V6.75Z" />
 </svg>
 </span> Civil Registry Records</a>
-<a href="all-records-saved.php" data-label="All Records" class="sidebar-item <?= $activeStaffNav === 'all-records' ? 'active' : '' ?>">
-    <span class="si-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" id="records">
-            <path fill="currentColor" d="M4 9h4v2H4V9z"></path>
-            <path fill="currentColor" d="M16 2h-1V0H5v2H3v1.25L2.4 4H1v1.75L0 7v9h12l4-5V2zM2 5h8v2H2V5zm9 10H1V8h10v7zm1-8h-1V4H4V3h8v4zm2-2.5l-1 1.25V2H6V1h8v3.5z"></path>
-        </svg>
-    </span>
-    All Records
-</a>
+
       <a href="verification-monitoring.php" data-label="Verification Monitoring" class="sidebar-item <?= $activeStaffNav === 'verification' ? 'active' : '' ?>"><span class="si-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
   <path fill-rule="evenodd" d="M12.516 2.17a.75.75 0 0 0-1.032 0 11.209 11.209 0 0 1-7.877 3.08.75.75 0 0 0-.722.515A12.74 12.74 0 0 0 2.25 9.75c0 5.942 4.064 10.933 9.563 12.348a.749.749 0 0 0 .374 0c5.499-1.415 9.563-6.406 9.563-12.348 0-1.39-.223-2.73-.635-3.985a.75.75 0 0 0-.722-.516l-.143.001c-2.996 0-5.717-1.17-7.734-3.08Zm3.094 8.016a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clip-rule="evenodd" />
 </svg>
