@@ -219,6 +219,22 @@ if ($selfRecord) {
         }
     }
 
+    // The other parent of each child is ALWAYS a partner of the centered
+    // person, even with no marriage record on file. This is what makes the
+    // tree work when you click an orange "Previous Partner": the tree
+    // re-centers on them, the other parent shows beside them (orange) and
+    // the shared children hang below the two of them.
+    $knownPartnerKeys = [];
+    foreach ($allSpouses as $m) $knownPartnerKeys[ft_normalize(ft_full_name($m['record']))] = true;
+    foreach ($children as $c) {
+        $otherRaw = ft_normalize($c['father_name'] ?? '') === $selfName ? ($c['mother_name'] ?? '') : ($c['father_name'] ?? '');
+        $otherKey = ft_normalize((string) $otherRaw);
+        if ($otherKey === '' || isset($knownPartnerKeys[$otherKey])) continue;
+        $knownPartnerKeys[$otherKey] = true;
+        $otherRec = ft_find_by_name($nameIndex, $otherRaw) ?? $ft_virtual($otherRaw);
+        if ($otherRec) $allSpouses[] = ['record' => $otherRec, 'date' => null, 'role' => 'Partner', 'derived' => true];
+    }
+
     // Helper: given a parent's own record, find grandparents + that parent's siblings (aunts/uncles)
     $sideOf = function (?array $parentRecord) use ($allRecords, $nameIndex, $ft_virtual) {
         if (!$parentRecord || !empty($parentRecord['virtual'])) {
@@ -336,7 +352,14 @@ if ($selfRecord) {
                 }
             }
 
-            if ($hasMarriage || $hasDeathRecord) {
+            $hasAcknowledgedChild = false;
+            if ($parentSurnameNorm !== '') {
+                foreach ($info['children'] as $c) {
+                    if (ft_normalize($c['last_name'] ?? '') === $parentSurnameNorm) { $hasAcknowledgedChild = true; break; }
+                }
+            }
+
+            if ($hasMarriage || $hasDeathRecord || $hasAcknowledgedChild) {
                 // A documented union (marriage, or the partner has since
                 // passed away) - shown as a Previous Partner with their own
                 // parents, and EVERY child from that union counts, surname
@@ -455,6 +478,7 @@ function ft_year($record): string
      the approved layout mock. Fixed width so every generation lines up
      in neat columns instead of each tier drifting its own width. */
   .ft-node{
+    box-sizing:border-box;
     display:flex; flex-direction:row; align-items:center; gap:9px;
     padding:8px 11px; border-radius:10px; width:132px; text-align:left;
     background:var(--bg-card); border:1.5px solid var(--primary);
@@ -495,6 +519,12 @@ function ft_year($record): string
   .ft-side{ display:flex; flex-direction:column; align-items:center; }
   .ft-group-title{ font-size:10px; font-weight:800; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; margin-bottom:10px; text-align:center; }
 
+  /* Grid: LEFT = Father's previous partner(s) + their kids underneath,
+     CENTER = the direct line, RIGHT = Mother's previous partner(s) + kids. */
+  .ft-grid{ display:grid; grid-template-columns:auto auto auto; column-gap:46px; row-gap:46px; justify-content:center; align-items:start; position:relative; z-index:1; }
+  .ft-cell{ display:flex; justify-content:center; align-items:flex-start; gap:30px; }
+  .ft-ucol{ display:flex; justify-content:center; align-items:flex-start; gap:14px; flex-shrink:0; }
+  .ft-ucol.top{ align-items:flex-start; }
   .ft-tiers-stack{ display:flex; flex-direction:column; align-items:center; gap:46px; position:relative; z-index:1; }
   .ft-connectors{ position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; overflow:visible; z-index:0; }
 
@@ -651,7 +681,7 @@ function ft_year($record): string
   </div>
 
   <div class="ft-diagram-outer" style="overflow-x:auto;padding:10px 0 6px;">
-  <div class="ft-diagram-inner" style="position:relative;display:flex;flex-direction:column;align-items:center;min-width:680px;">
+  <div class="ft-diagram-inner" style="position:relative;display:flex;flex-direction:column;align-items:center;width:max-content;min-width:max(680px,100%);">
   <svg class="ft-connectors"></svg>
   <div class="ft-tiers-stack">
 
@@ -694,24 +724,55 @@ function ft_year($record): string
          diagram to the searched person's direct line only.
          ============================================================ -->
 
-    <!-- TIER 1 (top): Grandparents. -->
+    <!-- ============================================================
+         GRID LAYOUT (3 columns x up to 3 rows):
+           LEFT   = Father's previous partner(s), orange, with THEIR OWN
+                    parents above and the kids they share with Father
+                    directly BELOW them.
+           CENTER = the direct line: grandparents / Father + Mother /
+                    siblings + the searched person (+ spouses).
+           RIGHT  = same thing for Mother's previous partner(s).
+         Every previous-partner column has ONE fixed width, reused for its
+         parents / partner / kids cells, so the kids always sit exactly
+         under the orange card they belong to.
+         ============================================================ -->
     <?php
-      $anyFatherPrevGP = array_filter($fatherShownUnions, fn($u) => $u['parents']['grandfather'] || $u['parents']['grandmother']);
-      $anyMotherPrevGP = array_filter($motherShownUnions, fn($u) => $u['parents']['grandfather'] || $u['parents']['grandmother']);
+      $CARD_W = 132; $KID_GAP = 14; $GP_W = 330;
+      $calcW = function (array $u) use ($CARD_W, $KID_GAP, $GP_W) {
+          $n = count($u['children']);
+          $kidsW = $n ? $n * $CARD_W + ($n - 1) * $KID_GAP : 0;
+          $gpW = ($u['parents']['grandfather'] || $u['parents']['grandmother']) ? $GP_W : 0;
+          return max($CARD_W, $kidsW, $gpW);
+      };
+      foreach ($fatherShownUnions as $i => $u) $fatherShownUnions[$i]['_w'] = $calcW($u);
+      foreach ($motherShownUnions as $i => $u) $motherShownUnions[$i]['_w'] = $calcW($u);
+      $hasRow1 = $hasPaternal || $hasMaternal
+          || array_filter($fatherShownUnions, fn($u) => $u['parents']['grandfather'] || $u['parents']['grandmother'])
+          || array_filter($motherShownUnions, fn($u) => $u['parents']['grandfather'] || $u['parents']['grandmother']);
+      $hasRow2 = $tree['father'] || $tree['mother'] || $fatherShownUnions || $motherShownUnions;
+      $halfSibEdges = [];
     ?>
-    <?php if ($hasPaternal || $hasMaternal || $anyFatherPrevGP || $anyMotherPrevGP): ?>
-      <div class="ft-tier" style="gap:70px;">
-        <?php foreach ($fatherShownUnions as $i => $u): if (!$u['parents']['grandfather'] && !$u['parents']['grandmother']) continue; ?>
-          <div class="ft-side">
-            <div class="ft-group-title prev-partner-title">Father's Previous Partner's Parents</div>
-            <div class="ft-couple">
-              <?php $u['_gfId'] = ftNode($u['parents']['grandfather'], 'Grandfather', false, 'prev-partner'); ?>
-              <span class="plus">+</span>
-              <?php $u['_gmId'] = ftNode($u['parents']['grandmother'], 'Grandmother', false, 'prev-partner'); ?>
-            </div>
+    <div class="ft-grid">
+
+    <?php if ($hasRow1): ?>
+      <!-- ROW 1: grandparents -->
+      <div class="ft-cell">
+        <?php foreach ($fatherShownUnions as $i => $u): ?>
+          <div class="ft-ucol" style="width:<?= (int) $u['_w'] ?>px;">
+            <?php if ($u['parents']['grandfather'] || $u['parents']['grandmother']): ?>
+              <div class="ft-side">
+                <div class="ft-group-title prev-partner-title">Father's Previous Partner's Parents</div>
+                <div class="ft-couple">
+                  <?php $fatherShownUnions[$i]['_gfId'] = ftNode($u['parents']['grandfather'], 'Grandfather', false, 'prev-partner'); ?>
+                  <span class="plus">+</span>
+                  <?php $fatherShownUnions[$i]['_gmId'] = ftNode($u['parents']['grandmother'], 'Grandmother', false, 'prev-partner'); ?>
+                </div>
+              </div>
+            <?php endif; ?>
           </div>
-          <?php $fatherShownUnions[$i]['_gfId'] = $u['_gfId']; $fatherShownUnions[$i]['_gmId'] = $u['_gmId']; ?>
         <?php endforeach; ?>
+      </div>
+      <div class="ft-cell" style="gap:70px;">
         <?php if ($hasPaternal): ?>
           <div class="ft-side">
             <div class="ft-group-title">Paternal Grandparents</div>
@@ -732,40 +793,41 @@ function ft_year($record): string
             </div>
           </div>
         <?php endif; ?>
-        <?php foreach ($motherShownUnions as $i => $u): if (!$u['parents']['grandfather'] && !$u['parents']['grandmother']) continue; ?>
-          <div class="ft-side">
-            <div class="ft-group-title prev-partner-title">Mother's Previous Partner's Parents</div>
-            <div class="ft-couple">
-              <?php $gfId = ftNode($u['parents']['grandfather'], 'Grandfather', false, 'prev-partner'); ?>
-              <span class="plus">+</span>
-              <?php $gmId = ftNode($u['parents']['grandmother'], 'Grandmother', false, 'prev-partner'); ?>
-            </div>
+      </div>
+      <div class="ft-cell">
+        <?php foreach ($motherShownUnions as $i => $u): ?>
+          <div class="ft-ucol" style="width:<?= (int) $u['_w'] ?>px;">
+            <?php if ($u['parents']['grandfather'] || $u['parents']['grandmother']): ?>
+              <div class="ft-side">
+                <div class="ft-group-title prev-partner-title">Mother's Previous Partner's Parents</div>
+                <div class="ft-couple">
+                  <?php $motherShownUnions[$i]['_gfId'] = ftNode($u['parents']['grandfather'], 'Grandfather', false, 'prev-partner'); ?>
+                  <span class="plus">+</span>
+                  <?php $motherShownUnions[$i]['_gmId'] = ftNode($u['parents']['grandmother'], 'Grandmother', false, 'prev-partner'); ?>
+                </div>
+              </div>
+            <?php endif; ?>
           </div>
-          <?php $motherShownUnions[$i]['_gfId'] = $gfId; $motherShownUnions[$i]['_gmId'] = $gmId; ?>
         <?php endforeach; ?>
       </div>
       <?php
         if ($idPatGF && $idPatGM) $ftEdges[] = ['type' => 'couple', 'a' => $idPatGF, 'b' => $idPatGM];
         if ($idMatGF && $idMatGM) $ftEdges[] = ['type' => 'couple', 'a' => $idMatGF, 'b' => $idMatGM];
-        foreach ($fatherShownUnions as $u) {
-            if (!empty($u['_gfId']) && !empty($u['_gmId'])) $ftEdges[] = ['type' => 'couple', 'a' => $u['_gfId'], 'b' => $u['_gmId']];
-        }
-        foreach ($motherShownUnions as $u) {
-            if (!empty($u['_gfId']) && !empty($u['_gmId'])) $ftEdges[] = ['type' => 'couple', 'a' => $u['_gfId'], 'b' => $u['_gmId']];
-        }
+        foreach ($fatherShownUnions as $u) { if (!empty($u['_gfId']) && !empty($u['_gmId'])) $ftEdges[] = ['type' => 'couple', 'a' => $u['_gfId'], 'b' => $u['_gmId']]; }
+        foreach ($motherShownUnions as $u) { if (!empty($u['_gfId']) && !empty($u['_gmId'])) $ftEdges[] = ['type' => 'couple', 'a' => $u['_gfId'], 'b' => $u['_gmId']]; }
       ?>
     <?php endif; ?>
 
-    <!-- TIER 2: Father + Mother as the main couple, with each one's
-         documented Previous Partner(s) (if any) just outside them,
-         orange-highlighted so each is clearly a separate branch. -->
-    <?php if ($tree['father'] || $tree['mother'] || $fatherShownUnions || $motherShownUnions): ?>
-      <div class="ft-tier" style="align-items:center;gap:44px;">
+    <?php if ($hasRow2): ?>
+      <!-- ROW 2: Father + Mother in the middle, each one's previous partner(s) beside them -->
+      <div class="ft-cell" style="align-items:center;">
         <?php foreach ($fatherShownUnions as $i => $u): ?>
-          <?php $pid = ftNode($u['record'], "Father's Previous Partner" . (!empty($u['deceased']) ? ' (deceased)' : ''), false, 'prev-partner'); ?>
-          <?php $fatherShownUnions[$i]['_personId'] = $pid; ?>
+          <div class="ft-ucol" style="width:<?= (int) $u['_w'] ?>px;">
+            <?php $fatherShownUnions[$i]['_personId'] = ftNode($u['record'], "Father's Previous Partner" . (!empty($u['deceased']) ? ' (deceased)' : ''), false, 'prev-partner'); ?>
+          </div>
         <?php endforeach; ?>
-
+      </div>
+      <div class="ft-cell" style="align-items:center;">
         <?php if ($tree['father'] || $tree['mother']): ?>
           <div class="ft-couple">
             <?php if ($tree['father']): $idFather = ftNode($tree['father'], 'Father'); endif; ?>
@@ -773,27 +835,24 @@ function ft_year($record): string
             <?php if ($tree['mother']): $idMother = ftNode($tree['mother'], 'Mother'); endif; ?>
           </div>
         <?php endif; ?>
-
+      </div>
+      <div class="ft-cell" style="align-items:center;">
         <?php foreach ($motherShownUnions as $i => $u): ?>
-          <?php $pid = ftNode($u['record'], "Mother's Previous Partner" . (!empty($u['deceased']) ? ' (deceased)' : ''), false, 'prev-partner'); ?>
-          <?php $motherShownUnions[$i]['_personId'] = $pid; ?>
+          <div class="ft-ucol" style="width:<?= (int) $u['_w'] ?>px;">
+            <?php $motherShownUnions[$i]['_personId'] = ftNode($u['record'], "Mother's Previous Partner" . (!empty($u['deceased']) ? ' (deceased)' : ''), false, 'prev-partner'); ?>
+          </div>
         <?php endforeach; ?>
       </div>
-
+      
       <?php
         if ($tree['father'] && $tree['mother']) $ftEdges[] = ['type' => 'couple', 'a' => $idFather, 'b' => $idMother];
         foreach ($fatherShownUnions as $u) { if ($idFather && !empty($u['_personId'])) $ftEdges[] = ['type' => 'couple', 'a' => $idFather, 'b' => $u['_personId']]; }
         foreach ($motherShownUnions as $u) { if ($idMother && !empty($u['_personId'])) $ftEdges[] = ['type' => 'couple', 'a' => $idMother, 'b' => $u['_personId']]; }
 
-        // Grandparents (ABOVE) -> the couple they belong to (BELOW).
+        // Grandparents (ABOVE) -> the person they belong to (BELOW).
         if (($idPatGF || $idPatGM) && $idFather) $ftEdges[] = ['type' => 'parent-child', 'parents' => array_values(array_filter([$idPatGF, $idPatGM])), 'children' => [$idFather]];
         if (($idMatGF || $idMatGM) && $idMother) $ftEdges[] = ['type' => 'parent-child', 'parents' => array_values(array_filter([$idMatGF, $idMatGM])), 'children' => [$idMother]];
-        foreach ($fatherShownUnions as $u) {
-            if ((!empty($u['_gfId']) || !empty($u['_gmId'])) && !empty($u['_personId'])) {
-                $ftEdges[] = ['type' => 'parent-child', 'parents' => array_values(array_filter([$u['_gfId'] ?? null, $u['_gmId'] ?? null])), 'children' => [$u['_personId']]];
-            }
-        }
-        foreach ($motherShownUnions as $u) {
+        foreach (array_merge($fatherShownUnions, $motherShownUnions) as $u) {
             if ((!empty($u['_gfId']) || !empty($u['_gmId'])) && !empty($u['_personId'])) {
                 $ftEdges[] = ['type' => 'parent-child', 'parents' => array_values(array_filter([$u['_gfId'] ?? null, $u['_gmId'] ?? null])), 'children' => [$u['_personId']]];
             }
@@ -801,24 +860,25 @@ function ft_year($record): string
       ?>
     <?php endif; ?>
 
-    <!-- TIER 3: The searched person, their siblings, any half-siblings
-         (whether their other parent is shown as a documented Previous
-         Partner above, or wasn't documented at all), and every spouse of
-         their own (current AND ex - none are dropped). Self highlighted. -->
-    <div class="ft-tier">
-      <?php
-        // Half-siblings from a DOCUMENTED previous partner connect to that
-        // specific couple (Father + that partner). Half-siblings from an
-        // UNDOCUMENTED union (no partner card anywhere) connect to the
-        // single parent alone - that other parent is never named or shown.
-        $halfSibEdges = []; // [ [parents]=>[...], kids=>[id,...] ]
-        foreach ($fatherShownUnions as $u) {
-            if (!$u['children']) continue;
+    <!-- ROW 3: the kids of each previous partner sit DIRECTLY UNDER that
+         partner (left / right columns); the searched person, siblings and
+         spouses are in the center. -->
+    <div class="ft-cell">
+      <?php foreach ($fatherShownUnions as $i => $u): ?>
+        <div class="ft-ucol" style="width:<?= (int) $u['_w'] ?>px;">
+          <?php
             $ids = [];
             foreach ($u['children'] as $k) $ids[] = ftNode($k, 'Half-sibling', false, 'prev-partner');
-            $halfSibEdges[] = ['parents' => array_values(array_filter([$idFather, $u['_personId'] ?? null])), 'kids' => $ids];
-        }
-      ?>
+            if ($ids) {
+                $parents = array_values(array_filter([$idFather, $u['_personId'] ?? null]));
+                $halfSibEdges[] = ['parents' => $parents, 'kids' => $ids, 'union' => count($parents) === 2];
+            }
+          ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+
+    <div class="ft-cell">
       <?php foreach ($tree['fatherUnions']['unshownChildren'] as $k): ?>
         <?php $uid = ftNode($k, 'Half-sibling'); ?>
         <?php $halfSibEdges[] = ['parents' => array_values(array_filter([$idFather])), 'kids' => [$uid]]; ?>
@@ -829,14 +889,7 @@ function ft_year($record): string
       <?php endforeach; ?>
       <?php $idSelf = ftNode($tree['self'], 'You', true); ?>
 
-      <?php foreach ($motherShownUnions as $u): ?>
-        <?php if (!$u['children']) continue; ?>
-        <?php $ids = []; ?>
-        <?php foreach ($u['children'] as $k): ?>
-          <?php $ids[] = ftNode($k, 'Half-sibling', false, 'prev-partner'); ?>
-        <?php endforeach; ?>
-        <?php $halfSibEdges[] = ['parents' => array_values(array_filter([$idMother, $u['_personId'] ?? null])), 'kids' => $ids]; ?>
-      <?php endforeach; ?>
+
       <?php foreach ($tree['motherUnions']['unshownChildren'] as $k): ?>
         <?php $uid = ftNode($k, 'Half-sibling'); ?>
         <?php $halfSibEdges[] = ['parents' => array_values(array_filter([$idMother])), 'kids' => [$uid]]; ?>
@@ -844,10 +897,28 @@ function ft_year($record): string
 
       <?php foreach ($tree['allSpouses'] as $m): ?>
         <span class="plus" style="align-self:center;">+</span>
-        <?php $spId = ftNode($m['record'], $m['role']); ?>
+        <?php $spExtra = (!empty($m['derived']) || ($m['role'] ?? '') === 'Ex-Spouse') ? 'prev-partner' : ''; ?>
+        <?php $spId = ftNode($m['record'], $m['role'], false, $spExtra); ?>
         <?php $spouseNodes[] = ['id' => $spId, 'role' => $m['role'], 'record' => $m['record']]; ?>
       <?php endforeach; ?>
     </div>
+
+    <div class="ft-cell">
+      <?php foreach ($motherShownUnions as $i => $u): ?>
+        <div class="ft-ucol" style="width:<?= (int) $u['_w'] ?>px;">
+          <?php
+            $ids = [];
+            foreach ($u['children'] as $k) $ids[] = ftNode($k, 'Half-sibling', false, 'prev-partner');
+            if ($ids) {
+                $parents = array_values(array_filter([$idMother, $u['_personId'] ?? null]));
+                $halfSibEdges[] = ['parents' => $parents, 'kids' => $ids, 'union' => count($parents) === 2];
+            }
+          ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+
+    </div><!-- /.ft-grid -->
 
     <?php
       foreach ($spouseNodes as $sp) { $ftEdges[] = ['type' => 'couple', 'a' => $idSelf, 'b' => $sp['id']]; }
@@ -858,10 +929,15 @@ function ft_year($record): string
       if ($parentIds && $selfGen) {
           $ftEdges[] = ['type' => 'parent-child', 'parents' => $parentIds, 'children' => $selfGen];
       }
-      // Each half-sibling group (documented partner, or undocumented/no
-      // card) -> its own children, as a separate edge each.
+      // Each previous-partner group -> ITS OWN kids (hangs off the
+      // Father+partner marriage line, with its own bus so it never merges
+      // with the siblings' bus).
       foreach ($halfSibEdges as $e) {
-          if ($e['parents'] && $e['kids']) $ftEdges[] = ['type' => 'parent-child', 'parents' => $e['parents'], 'children' => $e['kids']];
+          if ($e['parents'] && $e['kids']) {
+              $edge = ['type' => 'parent-child', 'parents' => $e['parents'], 'children' => $e['kids']];
+              if (!empty($e['union'])) $edge['union'] = true;
+              $ftEdges[] = $edge;
+          }
       }
     ?>
 
@@ -996,20 +1072,26 @@ function drawFamilyTreeConnectors() {
       const childRects = edge.children.map(nodeRect).filter(Boolean);
       if (!parentRects.length || !childRects.length) return;
 
-      // Parents always sit ABOVE their children now, so the drop always
-      // starts at the lowest parent edge and ends at the highest child
-      // edge - one shared horizontal bus in between, like a proper
-      // genealogy chart.
-      const originY = Math.max(...parentRects.map(r => r.bottom));
+      // Parents always sit ABOVE their children. The shared horizontal bus
+      // sits between the lowest parent edge and the highest child edge.
+      const parentsBottom = Math.max(...parentRects.map(r => r.bottom));
       const childTopY = Math.min(...childRects.map(r => r.top));
-      const busY = originY + (childTopY - originY) / 2;
+      // A previous-partner group gets its bus a bit higher so it never
+      // merges with the siblings' bus running at the same height.
+      const busY = parentsBottom + (childTopY - parentsBottom) * (edge.union ? 0.3 : 0.5);
 
-      // A couple drops ONE shared line from the midpoint of their
-      // marriage line, rather than one line each, so the children hang
-      // off the union instead of off each parent separately.
-      let parentDrops;
+      // A couple drops ONE shared line that starts ON their marriage line
+      // (the gap between the two cards), so the children visibly hang off
+      // the union instead of floating below it.
+      let parentDrops, originY = parentsBottom;
       if (parentRects.length === 2) {
-        parentDrops = [(parentRects[0].centerX + parentRects[1].centerX) / 2];
+        const [l, r] = parentRects[0].centerX <= parentRects[1].centerX ? [parentRects[0], parentRects[1]] : [parentRects[1], parentRects[0]];
+        if (Math.abs(l.centerY - r.centerY) < 12 && r.left - l.right > 4) {
+          parentDrops = [(l.right + r.left) / 2];
+          originY = (l.centerY + r.centerY) / 2;
+        } else {
+          parentDrops = [(l.centerX + r.centerX) / 2];
+        }
       } else {
         parentDrops = parentRects.map(r => r.centerX);
       }

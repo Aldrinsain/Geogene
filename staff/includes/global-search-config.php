@@ -48,7 +48,7 @@ if (!function_exists('gg_search_script')) {
             ['t' => 'Scan a Certificate',         'u' => 'civil-registry-scan.php',      'd' => 'Read a certificate photo (OCR)',              'k' => 'ocr scan upload photo camera picture', 'g' => 'Action', 'i' => '📷'],
             ['t' => 'Bulk Scan Certificates',     'u' => 'civil-registry-bulk-scan.php', 'd' => 'Scan many certificates at once',              'k' => 'ocr scan many multiple batch upload photos', 'g' => 'Action', 'i' => '🗂️'],
             ['t' => 'Import Records from Excel',  'u' => 'civil-registry-import.php',    'd' => 'Upload a spreadsheet of records',             'k' => 'excel xlsx spreadsheet upload import template', 'g' => 'Action', 'i' => '📥'],
-            ['t' => 'All Records',                'u' => 'all-records-saved.php',        'd' => 'Everything that has been saved',              'k' => 'saved list everything history', 'g' => 'Page', 'i' => '🗃️', 'top' => 1],
+            
             ['t' => 'Verification Monitoring',    'u' => 'verification-monitoring.php',  'd' => 'Check and approve citizen identity verification', 'k' => 'verify identity id approve reject pending review', 'g' => 'Page', 'i' => '🛡️', 'top' => 1],
             ['t' => 'User Management',            'u' => 'user-management.php',          'd' => 'Citizen accounts: search, filter, enable/disable', 'k' => 'users citizens accounts enable disable filter', 'g' => 'Page', 'i' => '👥', 'top' => 1],
             ['t' => 'Disabled Users',             'u' => 'user-management.php?status=disabled', 'd' => 'Accounts that were disabled',          'k' => 'suspended blocked inactive', 'g' => 'Filter', 'i' => '🚫'],
