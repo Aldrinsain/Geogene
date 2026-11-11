@@ -1,3 +1,6 @@
+
+dashboard.php
+100%
 <?php
 require_once __DIR__ . '/includes/staff-auth-guard.php';
 require_once __DIR__ . '/../config/db.php';
@@ -28,6 +31,31 @@ foreach ($regRows as $row) {
 }
 $regLabels = array_column($monthlyRegs, 'label');
 $regCounts = array_column($monthlyRegs, 'count');
+
+// Accounts created per month (last 12 months, all roles) - same data as the Admin dashboard chart
+$accMonths = [];
+$accStart = new DateTime('first day of this month');
+$accStart->modify('-11 months');
+for ($i = 0; $i < 12; $i++) {
+    $d = (clone $accStart)->modify("+$i months");
+    $accMonths[$d->format('Y-m')] = ['label' => $d->format('M y'), 'total' => 0, 'users' => 0];
+}
+$accRows = $pdo->query("
+    SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, COUNT(*) AS cnt, SUM(role = 'user') AS u
+    FROM users
+    WHERE created_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 11 MONTH), '%Y-%m-01')
+    GROUP BY ym
+")->fetchAll();
+foreach ($accRows as $r) {
+    if (isset($accMonths[$r['ym']])) {
+        $accMonths[$r['ym']]['total'] = (int) $r['cnt'];
+        $accMonths[$r['ym']]['users'] = (int) $r['u'];
+    }
+}
+$accLabels = array_column($accMonths, 'label');
+$accTotals = array_column($accMonths, 'total');
+$accSum    = array_sum($accTotals);
+$accUsers  = array_sum(array_column($accMonths, 'users'));
 
 // A user counts as "online" if we've seen a request from them in the last
 // 5 minutes (last_seen is bumped by the auth-guard heartbeat on every page).
@@ -85,6 +113,16 @@ require_once __DIR__ . '/includes/staff-header.php';
   </div>
 </div>
 
+<div class="panel" style="margin-top:20px;">
+  <div class="panel-header">
+    <span class="panel-title">Accounts Created per Month (last 12 months)</span>
+    <span style="font-size:12px;color:var(--text-secondary);"><?= number_format($accSum) ?> total &middot; <?= number_format($accUsers) ?> users &middot; <?= number_format($accSum - $accUsers) ?> staff/admin</span>
+  </div>
+  <div style="position:relative;height:260px;">
+    <canvas id="accChart"></canvas>
+  </div>
+</div>
+
 <div class="panel">
   <div class="panel-header"><span class="panel-title">Quick Actions</span></div>
   <div class="quick-tiles">
@@ -126,19 +164,21 @@ require_once __DIR__ . '/includes/staff-header.php';
   <?php endforeach; endif; ?>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="../assets/js/chart.umd.min.js"></script>
 <script>
 (function () {
   var regLabels = <?= json_encode($regLabels) ?>;
   var regCounts = <?= json_encode($regCounts) ?>;
   var verifiedCount = <?= (int) $verifiedUsers ?>;
   var pendingCount = <?= (int) $pendingVerification ?>;
+  var accLabels = <?= json_encode($accLabels) ?>;
+  var accTotals = <?= json_encode($accTotals) ?>;
 
   function cssVar(name) {
     return getComputedStyle(document.body).getPropertyValue(name).trim();
   }
 
-  var regChart, verifyChart;
+  var regChart, verifyChart, accChart;
 
   function buildCharts() {
     var textColor = cssVar('--text-secondary') || '#6b6b6b';
@@ -147,6 +187,7 @@ require_once __DIR__ . '/includes/staff-header.php';
 
     if (regChart) regChart.destroy();
     if (verifyChart) verifyChart.destroy();
+    if (accChart) accChart.destroy();
 
     regChart = new Chart(document.getElementById('regChart'), {
       type: 'line',
@@ -193,6 +234,47 @@ require_once __DIR__ . '/includes/staff-header.php';
         }
       }
     });
+
+    // Shows the number on top of each bar
+    var barValueLabels = {
+      id: 'barValueLabels',
+      afterDatasetsDraw: function (chart) {
+        var ctx = chart.ctx;
+        ctx.save();
+        ctx.fillStyle = cssVar('--text-primary') || textColor;
+        ctx.font = '700 11px sans-serif';
+        ctx.textAlign = 'center';
+        chart.getDatasetMeta(0).data.forEach(function (bar, i) {
+          ctx.fillText(String(chart.data.datasets[0].data[i]), bar.x, bar.y - 6);
+        });
+        ctx.restore();
+      }
+    };
+
+    accChart = new Chart(document.getElementById('accChart'), {
+      type: 'bar',
+      data: {
+        labels: accLabels,
+        datasets: [{
+          label: 'New accounts',
+          data: accTotals,
+          backgroundColor: primary,
+          borderRadius: 4,
+          maxBarThickness: 34
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 18 } },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: textColor, font: { size: 11 } } },
+          y: { beginAtZero: true, ticks: { precision: 0, color: textColor, font: { size: 11 } }, grid: { color: gridColor } }
+        }
+      },
+      plugins: [barValueLabels]
+    });
   }
 
   buildCharts();
@@ -203,3 +285,4 @@ require_once __DIR__ . '/includes/staff-header.php';
 </script>
 
 <?php require_once __DIR__ . '/includes/staff-footer.php'; ?>
+Displaying dashboard.php.

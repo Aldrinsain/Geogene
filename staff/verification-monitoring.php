@@ -46,7 +46,7 @@ require_once __DIR__ . '/includes/staff-header.php';
 
 <div class="panel">
   <div class="panel-header">
-    <span class="panel-title">User Verification Status</span>
+    <span class="panel-title">Citizen Verification Status</span>
     
   </div>
 
@@ -56,7 +56,7 @@ require_once __DIR__ . '/includes/staff-header.php';
   </form>
 
   <table class="data-table">
-    <thead><tr><th>Full Name</th><th>Email Address</th><th>Status</th><th>Identity Verified</th><th>Date Registered</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Full Name</th><th>Email Address</th><th>Status</th><th>Identity Verified</th><th>Date Registered</th></tr></thead>
     <tbody>
       <?php if (!$users): ?>
         <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">No users found.</td></tr>
@@ -78,7 +78,7 @@ require_once __DIR__ . '/includes/staff-header.php';
               <a href="?approve=<?= $u['user_id'] ?>" class="icon-btn" title="Approve">✅</a>
               <a href="?reject=<?= $u['user_id'] ?>" class="icon-btn danger" title="Reject" onclick="return confirm('Are you sure you want to reject and disable this user?');">✕</a>
             <?php else: ?>
-              <span style="color:var(--text-muted);font-size:11px;">—</span>
+              
             <?php endif; ?>
           </td>
         </tr>
